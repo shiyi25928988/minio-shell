@@ -13,6 +13,7 @@ import static j2html.TagCreator.a;
 import static j2html.TagCreator.body;
 import static j2html.TagCreator.div;
 import static j2html.TagCreator.form;
+import static j2html.TagCreator.h4;
 import static j2html.TagCreator.html;
 import static j2html.TagCreator.p;
 import static j2html.TagCreator.script;
@@ -28,6 +29,10 @@ public class LoginPage {
                 Head.createHead("Login"),
                 body().withClass("blue").with(
                         div().withClass("container").withStyle("margin-top:80px;").with(
+                                div().withClass("center-align").withStyle("margin-bottom:24px;").with(
+                                        h4("MinIO Shell").withClass("white-text").withStyle("font-weight:300;margin:0;letter-spacing:1px;"),
+                                        p("File isolation gateway").withClass("white-text").withStyle("opacity:0.85;margin-top:6px;font-size:0.9rem;")
+                                ),
                                 div().withClass("card").with(
                                         div().withClass("card-content").with(
                                                 span("Login").withClass("card-title").withId("formTitle"),

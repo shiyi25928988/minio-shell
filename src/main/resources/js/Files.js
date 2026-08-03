@@ -97,7 +97,7 @@ $(document).ready(function () {
                 pathLine + '</span>' +
                 size +
                 '<span class="file-actions" style="white-space:nowrap;">' +
-                  '<a href="#" class="share-link" style="color:#009688;font-size:1.15rem;margin-left:4px;" title="Share" data-path="' + escapeAttr(it.name) + '">🔗</a>' +
+                  (it.dir ? '' : '<a href="#" class="share-link" style="color:#009688;font-size:1.15rem;margin-left:4px;" title="Share" data-path="' + escapeAttr(it.name) + '">🔗</a>') +
                   (it.dir ? '' : '<a href="#" class="dl-link" style="color:#1976d2;font-size:1.15rem;margin-left:8px;" title="Download" data-path="' + escapeAttr(it.name) + '">⬇️</a>') +
                   '<a href="#" class="del-link" style="color:#e53935;font-size:1.15rem;margin-left:8px;" title="Delete" data-path="' + escapeAttr(it.name) + '" data-dir="' + it.dir + '">🗑️</a>' +
                 '</span>' +
