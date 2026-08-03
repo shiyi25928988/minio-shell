@@ -53,6 +53,32 @@ public class FileApi {
         return new JSON<>(minioService.listObjects(b, prefix, false));
     }
 
+    /** 递归搜索整个用户桶内名称匹配 q 的<b>文件</b>（不含文件夹）。 */
+    @GET
+    @HttpPath("/file/search")
+    @AUTH
+    public JSON<List<FileItem>> search(@HttpParam("q") String q,
+                                       @HttpParam("bucket") String bucket) {
+        String b = resolveBucket(bucket);
+        minioService.ensureBucket(b);
+        List<FileItem> all = minioService.listObjects(b, "", true);
+        String ql = (q == null) ? "" : q.toLowerCase();
+        boolean emptyQuery = ql.trim().isEmpty();
+        List<FileItem> matched = new ArrayList<>();
+        for (FileItem it : all) {
+            // 只搜文件：跳过文件夹占位（以 '/' 结尾）
+            if (it.getName() == null || it.getName().endsWith("/")) {
+                continue;
+            }
+            if (emptyQuery
+                    || it.getName().toLowerCase().contains(ql)
+                    || (it.getDisplay() != null && it.getDisplay().toLowerCase().contains(ql))) {
+                matched.add(it);
+            }
+        }
+        return new JSON<>(matched);
+    }
+
     /** 上传文件（multipart：表单字段 path/bucket + 一个或多个 file 部分）。 */
     @POST
     @HttpPath("/file/upload")

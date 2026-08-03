@@ -76,7 +76,7 @@ $(document).ready(function () {
         return '📄';
     }
 
-    function renderFiles(items) {
+    function renderFiles(items, showPath) {
         if (items.length === 0) {
             $('#fileContainer').html('<p class="grey-text center-align" style="margin-top:40px;">Empty folder &mdash; drag &amp; drop files here to upload</p>');
             return;
@@ -88,9 +88,13 @@ $(document).ready(function () {
         items.forEach(function (it) {
             var icon = fileIcon(it.display, it.dir);
             var size = it.dir ? '' : '<span class="grey-text" style="margin-right:12px;">' + formatSize(it.size) + '</span>';
+            var pathLine = (showPath && it.name && it.name !== it.display)
+                ? '<div class="grey-text" style="font-size:0.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(it.name) + '</div>'
+                : '';
             html += '<li class="collection-item" style="display:flex;align-items:center;">' +
-                '<span class="file-name" style="cursor:pointer;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" data-path="' + escapeAttr(it.name) + '" data-dir="' + it.dir + '">' +
-                '<span style="margin-right:8px;">' + icon + '</span>' + escapeHtml(it.display) + '</span>' +
+                '<span class="file-name" style="cursor:pointer;flex:1;overflow:hidden;margin-right:8px;" data-path="' + escapeAttr(it.name) + '" data-dir="' + it.dir + '">' +
+                '<span style="margin-right:8px;">' + icon + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(it.display) + '</span>' +
+                pathLine + '</span>' +
                 size +
                 '<span class="file-actions" style="white-space:nowrap;">' +
                   '<a href="#" class="share-link" style="color:#009688;font-size:1.15rem;margin-left:4px;" title="Share" data-path="' + escapeAttr(it.name) + '">🔗</a>' +
@@ -106,6 +110,7 @@ $(document).ready(function () {
             var p = $(this).data('path');
             if ($(this).data('dir') === true || $(this).data('dir') === 'true') {
                 prefix = p;
+                $('#fileSearch').val('');
                 loadFiles();
             } else {
                 var ext = extOf(p);
@@ -326,6 +331,37 @@ $(document).ready(function () {
     });
 
     $('#refreshBtn').click(function (e) { e.preventDefault(); loadFiles(); });
+
+    // 搜索：防抖 300ms，空查询恢复当前文件夹列表
+    var searchTimer = null;
+    $('#fileSearch').on('input', function () {
+        var q = $(this).val().trim();
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function () { doSearch(q); }, 300);
+    });
+    function doSearch(q) {
+        if (!q) {
+            loadFiles();
+            return;
+        }
+        $('#busyIndicator').show();
+        $.ajax({
+            url: withBucket('/file/search?q=' + encodeURIComponent(q)),
+            method: 'GET',
+            cache: false,
+            success: function (items) {
+                $('#busyIndicator').hide();
+                $('#breadcrumb').html('<span class="grey-text">Search results for: <b>' + escapeHtml(q) + '</b></span>');
+                renderFiles(items || [], true);
+            },
+            error: function (xhr) {
+                $('#busyIndicator').hide();
+                var msg = xhr.responseText || 'search failed';
+                try { msg = JSON.parse(msg).errMsg || msg; } catch (e) {}
+                M.toast({html: msg});
+            }
+        });
+    }
 
     function formatSize(bytes) {
         if (!bytes) return '0 B';
