@@ -1,0 +1,7 @@
+.git
+.idea
+*.iml
+logs
+data
+certs
+static
