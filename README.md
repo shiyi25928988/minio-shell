@@ -1,33 +1,29 @@
 # MinIO Shell
 
-基于自研轻量 Web 框架 [plinth](https://github.com/) (Guice 7 + Jetty 12) 构建的 **MinIO 文件隔离网关**：为 MinIO 提供**用户认证 + 每用户独立桶 + Web 文件管理 + S3 兼容端点**。
+一个 MinIO 文件隔离网关:在 MinIO 之上加上**用户认证、每用户独立存储空间、Web 文件管理、文件分享、S3 客户端直连**。适合多人共享一个 MinIO、但彼此文件隔离的场景。
 
-不使用 Spring Boot，纯 Java 21，单 fat jar 部署。
+## 它能做什么
 
-## 功能
-
-- **用户认证**：sa-token 会话管理，注册/登录/登出，角色控制（admin/user）
-- **每用户文件隔离**：每个用户独占一个 MinIO 桶（`user-<id>`），应用层强制隔离，普通用户只能访问自己的桶
-- **Web 文件管理**：j2html + Materialize CSS，浏览/上传/下载/删除/建文件夹，面包屑导航
-- **S3 兼容端点**：`/s3/*` 重签名代理，mc / aws-cli 等 S3 客户端可直连，每用户独立 access key
-- **文件分享**：为文件生成公开分享链接，支持可选密码 / 有效期 / 下载次数限制；`/page/shares` 管理与撤销
-- **admin 全局可见**：admin 可浏览任意用户的文件
-- **HTTPS 自签名证书**：启动时按 IP/域名自动生成，Bouncy Castle 实现
-- **嵌入式数据库**：H2 文件模式，无需外部数据库
+- **多用户隔离**:每个用户有独立的存储空间(独立桶),互相看不到对方的文件。
+- **Web 文件管理**:浏览器里浏览/上传/下载/删除/建文件夹,支持拖放上传(每文件独立进度)、图片预览、视频播放、按名搜索。
+- **文件分享**:为任意文件生成公开链接,可设密码/有效期/下载次数,谁有链接都能下载(无需登录)。
+- **S3 客户端直连**:用 mc/aws-cli 配上自己的 access key 直连,像用 S3 一样传文件(每用户独立 key,只能访问自己的空间)。
+- **用户管理**:管理员可查看所有用户、重置密码、浏览任意用户文件。
+- **HTTPS**:启动时自动生成自签名证书(可配置域名/IP)。
 
 ## 快速开始
 
-### 前置：一个可访问的 MinIO
+### 1. 准备一个 MinIO
 
 ```bash
-docker run -d --name minio -p 9000:9000 -e MINIO_ROOT_USER=minioadmin \
-  -e MINIO_ROOT_PASSWORD=minioadmin minio/minio server /data
+docker run -d --name minio -p 9000:9000 \
+  -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio server /data
 ```
 
-应用用此管理员凭据操作所有用户桶（`minio.accessKey` / `minio.secretKey`）。
+### 2. 启动 MinIO Shell
 
-### 本地运行
-
+本地运行:
 ```bash
 mvn package -DskipTests
 java -Dminio.endpoint=http://127.0.0.1:9000 \
@@ -35,133 +31,118 @@ java -Dminio.endpoint=http://127.0.0.1:9000 \
      -jar target/plinth-jre-21.jar
 ```
 
-访问 `http://localhost:443/page/login`，默认账号 `admin` / `admin`（首次启动自动创建）。
-> 默认 `server.ssl.enabled=false`（HTTP）；如需 HTTPS 设 `server.ssl.enabled=true` 并配置 `server.ssl.host`。
-
-### Docker 运行
-
+Docker 运行:
 ```bash
 mvn package -DskipTests
 docker build -t minio-shell .
-
-docker run -d --name minio-shell \
-  -p 443:443 \
-  -v ms-data:/app/data \
-  -v ms-certs:/app/certs \
-  -e SERVER_SSL_HOST=minio.example.com \
+docker run -d --name minio-shell -p 443:443 \
+  -v ms-data:/app/data -v ms-certs:/app/certs \
   -e MINIO_ENDPOINT=http://minio:9000 \
-  -e MINIO_ACCESS_KEY=minioadmin \
-  -e MINIO_SECRET_KEY=minioadmin \
+  -e MINIO_ACCESS_KEY=minioadmin -e MINIO_SECRET_KEY=minioadmin \
   minio-shell
 ```
 
-## 配置
+### 3. 登录
 
-所有配置均可通过环境变量（Docker）或 `-D` 参数覆盖 `application.properties`：
+访问 `http://<host>/page/login`,默认管理员 `admin` / `admin`(首次启动自动创建,可用 `ADMIN_DEFAULT_PASSWORD` 改默认密码)。
 
-| 环境变量 | 配置项 | 默认值 | 说明 |
-|---|---|---|---|
-| `SERVER_PORT` | server.port | 443 | 服务端口 |
-| `SERVER_SSL_ENABLED` | server.ssl.enabled | false | 是否启用 HTTPS |
-| `SERVER_SSL_HOST` | server.ssl.host | localhost | 证书 SAN（IP 或域名） |
-| `SERVER_SSL_CERT_DIR` | server.ssl.cert.dir | certs | 证书目录 |
-| `SERVER_SSL_KEYSTORE_PASSWORD` | server.ssl.keystore.password | plinth | keystore 密码 |
-| `MINIO_ENDPOINT` | minio.endpoint | http://127.0.0.1:9000 | 后端 MinIO 地址 |
-| `MINIO_ACCESS_KEY` | minio.accessKey | minioadmin | MinIO 管理员 access key |
-| `MINIO_SECRET_KEY` | minio.secretKey | minioadmin | MinIO 管理员 secret key |
-| `MINIO_REGION` | minio.region | (空) | MinIO region（空时按 us-east-1） |
-| `MINIO_BUCKET_PREFIX` | minio.bucketPrefix | user- | 用户桶名前缀，最终桶名 = 前缀+id |
-| `S3_EXTERNAL_ENDPOINT` | s3.external.endpoint | http://localhost:443/s3 | 展示给用户的 S3 端点 |
-| `ADMIN_DEFAULT_USERNAME` | admin.default.username | admin | 默认管理员用户名 |
-| `ADMIN_DEFAULT_PASSWORD` | admin.default.password | admin | 默认管理员密码 |
-| `TOKEN_EXPIRE` | token.expire | 86400 | token 过期时间（秒） |
-| `JDBC_DRIVER` | JDBC.driver | org.h2.Driver | 数据库驱动 |
-| `JDBC_URL` | JDBC.url | jdbc:h2:file:./data/minio_shell;... | 数据库连接 |
-| `JDBC_USERNAME` / `JDBC_PASSWORD` | JDBC.username / JDBC.password | sa / (空) | 数据库账号 |
-| `MYBATIS_MAPPER_SCAN` | mybatis.mapper.scan | yi.shi.plinth.db.mapper | Mapper 扫描包 |
+## 使用指南
 
-## 架构
+### 文件管理(首页 `/`)
 
-```
-用户 ──┬── Web 浏览器 ──> 前端应用 (443)
-       │                   ├─ /page/*     管理界面 (j2html)
-       │                   ├─ /user/*     用户 API (sa-token 认证)
-       │                   ├─ /file/*     文件 API (Web 数据面, MinIO SDK)
-       │                   └─ /META-INF/*  静态资源 (webjars)
-       │
-       └── mc / aws-cli ─> /s3/*  重签名代理 (SigV4)
-                                ├─ access key 查用户 + 验签 (用户 secret)
-                                ├─ 隔离校验 (bucket == 用户桶)
-                                └─ 管理员凭据重签名 -> MinIO
-```
+- **浏览**:点文件夹进入,面包屑导航返回上级。
+- **上传**:点 "Upload" 选文件,或**直接拖放文件到页面**。多文件并行上传,每个文件独立进度条(百分比 + 已传/总量)。
+- **下载**:点 ⬇️ 图标下载;点文件名则按类型处理(图片预览/视频播放/否则下载)。
+- **预览**:图片自动显示,视频自动播放(支持浏览器原生格式:mp4/webm/ogg)。
+- **建文件夹**:点 "New Folder",输入名称。
+- **删除**:点 🗑️,确认后删除。非空文件夹不能删;删除文件会自动清除它的所有分享链接。
+- **搜索**:顶部搜索框,按文件名递归搜索整个空间(只搜文件,不搜文件夹)。
 
-### 隔离模型
-- 每用户独立桶 `user-<id>`，注册时创建。
-- **Web 端**：`FileApi` 按当前登录用户固定桶；admin 可通过 `bucket` 参数指定他人桶。
-- **S3 端**：`MinioProxyServlet` 按 access key 查到用户，校验请求的 bucket 必须等于该用户桶。
-- MinIO 仅见到管理员凭据；隔离在网关层强制。
+### 文件分享
 
-### S3 兼容端点（/s3/*）
-每用户在 **Profile 页**获取自己的 access key / secret / bucket / endpoint。客户端配置示例：
+- 文件行点 🔗 生成分享链接,可设:密码、有效期(1/7/30 天/永久)、最大下载次数。
+- 链接 `/share/view?token=xxx` 可发给任何人,无需登录即可下载(设了密码则需输入)。
+- 在 "我的分享" 页(`/page/shares`)查看/复制/撤销自己的分享,查看下载次数。
+
+### S3 客户端直连(mc / aws-cli)
+
+在 **Profile 页**(`/page/profile`)获取自己的 Endpoint / Access Key / Secret / Bucket,然后:
 
 ```bash
 # mc (MinIO Client)
 mc alias set myapp http://<host>/s3 <ACCESS_KEY> <SECRET> --api S3v4
-mc ls myapp/user-1/          # 列出文件
+mc ls myapp/user-1/
 mc cp ./file.txt myapp/user-1/
 ```
 
 ```bash
-# aws-cli（path-style）
+# aws-cli(path-style)
 aws configure set default.s3.addressing_style path
 aws --endpoint-url http://<host>/s3 s3 ls s3://user-1/
 ```
 
-**限制**：不支持 `STREAMING-AWS4-HMAC-SHA256-PAYLOAD`（aws-chunked 分块签名上传）。大文件请用 unsigned payload：
-- mc 默认即如此；
-- aws-cli 执行 `aws configure set default.s3.payload_signing_enabled false`。
+> `S3_EXTERNAL_ENDPOINT` 要配成外部可访问的地址(见配置表)。
 
-### 核心模块
+### 个人资料(`/page/profile`)
 
-| 模块 | 包 | 说明 |
+- 查看账号信息。
+- **修改密码**:填当前密码 + 新密码 + 确认。
+- **S3 凭据**:查看/复制 access key/secret,重新生成(旧 key 立即失效)。
+- 客户端配置示例(mc/aws-cli)可直接复制。
+
+### 用户管理(`/page/users`,仅 admin)
+
+- 查看所有用户列表。
+- **重置密码**:点 "Reset Password",该用户密码重置为 `123456`。
+- **查看文件**:点 "Files" 浏览该用户的存储空间。
+
+## 配置
+
+所有配置可通过环境变量(Docker)或 `-D` 参数覆盖 `application.properties`:
+
+| 环境变量 | 默认值 | 说明 |
 |---|---|---|
-| 框架核心 | yi.shi.plinth | HTTP 路由、DI(Guice)、返回类型(HTML/JSON/BINARY)、Jetty 启动 |
-| 用户管理 | yi.shi.plinth.user | 注册/登录/CRUD、PasswordEncoder、MinIO 凭据签发 |
-| MinIO 数据面 | yi.shi.plinth.minio | MinioService（MinIO SDK：桶/对象操作） |
-| 文件 API | yi.shi.plinth.file | FileApi（list/upload/download/delete/mkdir） |
-| S3 代理 | yi.shi.plinth.proxy | MinioProxyServlet（/s3/* SigV4 重签名） |
-| SigV4 | yi.shi.plinth.auth | SigV4Util（sign/verify）、AuthHelper、RoleStpInterface |
-| 数据库 | yi.shi.plinth.db | DataSourceModule、SchemaInitializer、UserMapper |
-| 证书 | yi.shi.plinth.cert | CertificateGenerator（Bouncy Castle 自签名） |
-| 前端 | yi.shi.plinth.view | Page 基类、布局、页面、资源服务 |
+| `SERVER_PORT` | 443 | 服务端口 |
+| `SERVER_SSL_ENABLED` | false | 是否启用 HTTPS |
+| `SERVER_SSL_HOST` | localhost | 证书 SAN(IP 或域名) |
+| `SERVER_SSL_CERT_DIR` | certs | 证书目录 |
+| `SERVER_SSL_KEYSTORE_PASSWORD` | plinth | keystore 密码 |
+| `MINIO_ENDPOINT` | http://127.0.0.1:9000 | 后端 MinIO 地址 |
+| `MINIO_ACCESS_KEY` | minioadmin | MinIO 管理员 access key |
+| `MINIO_SECRET_KEY` | minioadmin | MinIO 管理员 secret key |
+| `MINIO_REGION` | (空) | MinIO region(空=us-east-1) |
+| `MINIO_BUCKET_PREFIX` | user- | 用户桶名前缀,桶名 = 前缀 + 用户 id |
+| `S3_EXTERNAL_ENDPOINT` | http://localhost:443/s3 | 展示给用户的 S3 端点(填外部可访问地址) |
+| `ADMIN_DEFAULT_USERNAME` | admin | 默认管理员用户名 |
+| `ADMIN_DEFAULT_PASSWORD` | admin | 默认管理员密码(仅首次创建生效) |
+| `TOKEN_EXPIRE` | 86400 | 登录 token 过期(秒) |
+| `JDBC_URL` | jdbc:h2:file:./data/minio_shell;... | 数据库连接(默认嵌入式 H2) |
 
-### 页面
+> `S3_EXTERNAL_ENDPOINT` 只在 Profile 页展示给用户(告诉用 mc/aws-cli 填什么),不影响实际功能。要填成外部可访问的地址,例如 `http://your-host:8088/s3`。
 
-| 页面 | 路径 | 功能 |
-|---|---|---|
-| 登录/注册 | /page/login | 登录表单 + 注册切换 |
-| 文件管理 | / | 当前用户桶的文件浏览器（admin 可 `?bucket=` 查看他人） |
-| 我的分享 | /page/shares | 当前用户的分享列表，复制链接 / 撤销 |
-| 分享访问 | /share/view?token= | 公开页（无需登录），凭 token 下载分享文件 |
-| 用户管理 | /page/users | 用户列表 + "查看文件"（admin） |
-| 个人资料 | /page/profile | 账号信息 + S3 凭据 + 客户端配置 + 重新生成密钥 |
-| 404 | /page/404 | 未找到页面 |
+## 常见问题
 
-## 技术栈
+**上传大文件失败 / `ERR_CONNECTION_RESET`**
+不是前端超时(前端不设超时)。通常是前面有 nginx 反代的默认限制:
+- `client_max_body_size`(默认 1MB)超限 → 改 `client_max_body_size 0;`
+- `proxy_read_timeout`(默认 60s)超时 → 改 `proxy_read_timeout 3600s;`
+- 大文件加 `proxy_request_buffering off;`(流式转发)
 
-- Java 21、Guice 7、Jetty 12 ee10、sa-token 1.44
-- MinIO Java SDK 8.5（数据面）
-- MyBatis 3.5 + mybatis-guice 4、H2 2.2
-- Bouncy Castle 1.78（证书）、j2html 1.6、Materialize CSS 1.0 + jQuery 3.7（webjars）
-- Lombok、Jackson 3、Caffeine（本地缓存）
+**S3 客户端上传大文件失败**
+不支持 `STREAMING-AWS4-HMAC-SHA256-PAYLOAD`(aws-chunked 分块签名)。mc 默认 OK;aws-cli 执行 `aws configure set default.s3.payload_signing_enabled false`。
+
+**中文文件名下载乱码**
+已用 RFC 5987 编码(`filename*=UTF-8''...`),主流浏览器都支持,不会乱码。
+
+**忘记 admin 密码**
+`ADMIN_DEFAULT_PASSWORD` 只在首次创建 admin 时生效。已存在的 admin 密码无法用配置改回,需删除 H2 数据文件(`./data/minio_shell.mv.db`)重启重新初始化,或用另一个管理员重置。
 
 ## 构建
 
 ```bash
 mvn clean package -DskipTests
 ```
-
-生成 `target/plinth-jre-21.jar`（可执行 fat jar）。
+生成 `target/plinth-jre-21.jar`(可执行 fat jar,需 Java 21)。
 
 ## 许可
 
