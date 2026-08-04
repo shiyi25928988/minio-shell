@@ -150,6 +150,16 @@ public class UserService {
         userMapper.update(user);
     }
 
+    /** 管理员重置用户密码为默认值 123456。 */
+    public void resetPassword(Long id) {
+        User user = requireUser(id);
+        String salt = PasswordEncoder.generateSalt();
+        user.setSalt(salt);
+        user.setPassword(PasswordEncoder.hash("123456", salt));
+        user.setUpdateTime(LocalDateTime.now());
+        userMapper.update(user);
+    }
+
     /** 删除用户。 */
     public void delete(Long id) {
         userMapper.deleteById(id);

@@ -17,6 +17,7 @@ import yi.shi.plinth.http.result.BINARY;
 import yi.shi.plinth.http.result.JSON;
 import yi.shi.plinth.minio.MinioService;
 import yi.shi.plinth.servlet.ServletHelper;
+import yi.shi.plinth.share.ShareService;
 import yi.shi.plinth.user.UserService;
 
 import java.util.ArrayList;
@@ -39,6 +40,9 @@ public class FileApi {
 
     @Inject
     private UserService userService;
+
+    @Inject
+    private ShareService shareService;
 
     /** 列出当前前缀下的对象/子文件夹（非递归）。 */
     @GET
@@ -153,6 +157,8 @@ public class FileApi {
                 throw new IllegalStateException("Folder is not empty, cannot delete");
             }
         }
+        // 一并删除该对象的所有分享链接
+        shareService.deleteByObject(b, path);
         minioService.deleteObject(b, path);
         return new JSON<>("deleted");
     }

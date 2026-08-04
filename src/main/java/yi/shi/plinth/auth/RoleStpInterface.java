@@ -17,7 +17,8 @@ public class RoleStpInterface implements StpInterface {
 
     @Override
     public List<String> getRoleList(Object loginId, String loginType) {
-        List<String> roles = RolesHelper.getRoles(loginId);
+        // 统一用 String 查询，与 AuthHelper.login 存入的 key 类型一致
+        List<String> roles = RolesHelper.getRoles(String.valueOf(loginId));
         return roles != null ? roles : Collections.emptyList();
     }
 }

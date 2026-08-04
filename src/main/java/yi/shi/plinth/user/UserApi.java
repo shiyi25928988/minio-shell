@@ -103,6 +103,15 @@ public class UserApi {
         return new JSON<>("deleted");
     }
 
+    /** 管理员重置用户密码为 123456。 */
+    @GET
+    @HttpPath("/user/reset-password")
+    @AUTH(orRole = "admin")
+    public JSON<String> resetPassword(@HttpParam("id") String id) {
+        userService.resetPassword(Long.parseLong(id));
+        return new JSON<>("password reset to 123456");
+    }
+
     private static int parseInt(String value, int defaultValue) {
         try {
             return Integer.parseInt(value);

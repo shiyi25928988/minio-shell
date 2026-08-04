@@ -80,6 +80,14 @@ public class ShareService {
         return shareMapper.deleteByTokenAndCreator(token, creatorId) > 0;
     }
 
+    /** 删除指定对象的全部分享记录（删除文件时一并清理其分享链接）。返回删除条数。 */
+    public int deleteByObject(String bucket, String objectName) {
+        if (bucket == null || objectName == null) {
+            return 0;
+        }
+        return shareMapper.deleteByObject(bucket, objectName);
+    }
+
     public Share getByToken(String token) {
         if (token == null || token.isBlank()) {
             return null;

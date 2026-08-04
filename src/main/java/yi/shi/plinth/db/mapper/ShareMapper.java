@@ -30,6 +30,10 @@ public interface ShareMapper {
     @Delete("DELETE FROM sys_share WHERE token = #{token} AND creator_id = #{creatorId}")
     int deleteByTokenAndCreator(@Param("token") String token, @Param("creatorId") Long creatorId);
 
+    /** 删除指定对象的全部分享记录（删除文件时一并清理其分享链接）。 */
+    @Delete("DELETE FROM sys_share WHERE bucket = #{bucket} AND object_name = #{objectName}")
+    int deleteByObject(@Param("bucket") String bucket, @Param("objectName") String objectName);
+
     /**
      * 原子地消费一次下载：仅当未过期且未超次数时 download_count+1。
      * 返回受影响行数：1=允许下载，0=已过期/超次数/不存在（由调用方区分）。

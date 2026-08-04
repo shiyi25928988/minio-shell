@@ -12,12 +12,14 @@ import java.util.Objects;
 public final class AuthHelper {
 
     public static void login(Object user, String...roles){
-        RolesHelper.addRoles(user, Lists.newArrayList(roles));
+        // 用 String 作 key：sa-token 回调 RoleStpInterface 时 loginId 是 String，
+        // 与此处存入的 Long 不匹配会导致角色读不到，统一 String.valueOf
+        RolesHelper.addRoles(String.valueOf(user), Lists.newArrayList(roles));
         StpUtil.login(user);
     }
 
     public static void login(Object user, List<String> roles){
-        RolesHelper.addRoles(user, roles);
+        RolesHelper.addRoles(String.valueOf(user), roles);
         StpUtil.login(user);
     }
 
@@ -25,7 +27,7 @@ public final class AuthHelper {
         Object loginId = StpUtil.getLoginIdDefaultNull();
         StpUtil.logout();
         if (Objects.nonNull(loginId)) {
-            RolesHelper.remove(loginId);
+            RolesHelper.remove(String.valueOf(loginId));
         }
     }
 }
