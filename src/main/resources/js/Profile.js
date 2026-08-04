@@ -29,6 +29,14 @@ $(document).ready(function () {
             '</div></div>';
 
         html += '<div class="card"><div class="card-content">' +
+            '<span class="card-title">Change Password</span>' +
+            '<div class="input-field"><input id="oldPwd" type="password"><label for="oldPwd">Current Password</label></div>' +
+            '<div class="input-field"><input id="newPwd" type="password"><label for="newPwd">New Password</label></div>' +
+            '<div class="input-field"><input id="confirmPwd" type="password"><label for="confirmPwd">Confirm New Password</label></div>' +
+            '<button class="btn blue" id="changePwdBtn">Change Password</button>' +
+            '</div></div>';
+
+        html += '<div class="card"><div class="card-content">' +
             '<span class="card-title">S3 Credentials</span>' +
             '<p><b>Endpoint:</b> ' + escapeHtml(s3Endpoint) + '</p>' +
             '<p><b>Bucket:</b> ' + escapeHtml(bucket) + '</p>' +
@@ -76,6 +84,29 @@ $(document).ready(function () {
                 },
                 error: function (xhr) {
                     M.toast({html: (xhr.responseText || 'regenerate failed')});
+                }
+            });
+        });
+
+        $('#changePwdBtn').click(function () {
+            var oldP = $('#oldPwd').val();
+            var newP = $('#newPwd').val();
+            var confirmP = $('#confirmPwd').val();
+            if (!oldP || !newP) { M.toast({html: 'please fill all fields'}); return; }
+            if (newP !== confirmP) { M.toast({html: 'new passwords do not match'}); return; }
+            $.ajax({
+                url: '/user/password',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({oldPassword: oldP, newPassword: newP}),
+                success: function () {
+                    M.toast({html: 'password changed'});
+                    $('#oldPwd').val(''); $('#newPwd').val(''); $('#confirmPwd').val('');
+                },
+                error: function (xhr) {
+                    var msg = xhr.responseText || 'change failed';
+                    try { msg = JSON.parse(msg).errMsg || msg; } catch (e) {}
+                    M.toast({html: msg});
                 }
             });
         });
