@@ -73,13 +73,7 @@ public class HomePage extends Page {
                                 label("Search").withFor("fileSearch")
                         ),
                         div().withId("breadcrumb").withClass("grey-text text-darken-1").withStyle("margin-bottom:8px;"),
-                        div().withId("uploadProgress").withStyle("display:none;margin-bottom:8px;").with(
-                                span("0%").withId("uploadProgressText").withClass("grey-text")
-                                        .withStyle("font-size:0.8rem;display:block;margin-bottom:2px;"),
-                                div().withClass("progress").withStyle("height:8px;").with(
-                                        div().withClass("determinate").withId("uploadProgressBar").withStyle("width:0%;")
-                                )
-                        ),
+                        div().withId("uploadProgress").withStyle("display:none;margin-bottom:8px;"),
                         div().withId("fileContainer"),
                         buildShareModal(),
                         buildPreviewModal(),

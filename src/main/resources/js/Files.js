@@ -240,42 +240,67 @@ $(document).ready(function () {
 
     function uploadFiles(files) {
         if (!files || !files.length) { return; }
-        var fd = new FormData();
-        for (var i = 0; i < files.length; i++) { fd.append('file', files[i]); }
+        var list = Array.prototype.slice.call(files);
+        // 为每个文件生成独立的进度项（文件名 + 进度条 + 百分比）
+        var html = '';
+        list.forEach(function (f, i) {
+            html += '<div class="upload-item" style="margin-bottom:10px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;font-size:0.88rem;">' +
+                  '<span class="grey-text text-darken-2" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;margin-right:8px;">' + escapeHtml(f.name) + ' <span class="grey-text">(' + formatSize(f.size) + ')</span></span>' +
+                  '<span class="upload-pct-' + i + ' grey-text" style="white-space:nowrap;"><b>0%</b></span>' +
+                '</div>' +
+                '<div class="progress" style="height:10px;margin-top:3px;"><div class="determinate upload-bar-' + i + '" style="width:0%;"></div></div>' +
+                '</div>';
+        });
+        $('#uploadProgress').html(html).show();
         $('#busyIndicator').show();
-        $('#uploadProgressBar').css('width', '0%');
-        $('#uploadProgressText').text('0%');
-        $('#uploadProgress').show();
-        $.ajax({
-            xhr: function () {
-                var xhr = new XMLHttpRequest();
-                xhr.upload.addEventListener('progress', function (e) {
-                    if (e.lengthComputable) {
-                        var pct = Math.round(e.loaded / e.total * 100);
-                        $('#uploadProgressBar').css('width', pct + '%');
-                        $('#uploadProgressText').text(pct + '%');
-                    }
-                });
-                return xhr;
-            },
-            url: withBucket('/file/upload' + (prefix ? '?path=' + encodeURIComponent(prefix) : '')),
-            method: 'POST',
-            data: fd,
-            processData: false,
-            contentType: false,
-            success: function () {
+
+        var remaining = list.length;
+        function oneDone() {
+            remaining--;
+            if (remaining <= 0) {
                 $('#busyIndicator').hide();
-                $('#uploadProgress').hide();
-                M.toast({html: files.length + ' file(s) uploaded'});
+                M.toast({html: list.length + ' file(s) uploaded'});
                 $('#fileInput').val('');
                 loadFiles();
-            },
-            error: function (xhr) {
-                $('#busyIndicator').hide();
-                $('#uploadProgress').hide();
-                M.toast({html: (xhr.responseText || 'upload failed')});
-                $('#fileInput').val('');
+                setTimeout(function () { $('#uploadProgress').hide(); }, 2000);
             }
+        }
+
+        // 并行上传，每个文件独立进度
+        list.forEach(function (f, i) {
+            var fd = new FormData();
+            fd.append('file', f);
+            $.ajax({
+                xhr: function () {
+                    var xhr = new XMLHttpRequest();
+                    xhr.upload.addEventListener('progress', function (e) {
+                        if (e.lengthComputable) {
+                            var pct = Math.round(e.loaded / e.total * 100);
+                            $('.upload-bar-' + i).css('width', pct + '%');
+                            $('.upload-pct-' + i).html('<b>' + pct + '%</b> &nbsp; ' + formatSize(e.loaded) + ' / ' + formatSize(e.total));
+                        }
+                    });
+                    return xhr;
+                },
+                url: withBucket('/file/upload' + (prefix ? '?path=' + encodeURIComponent(prefix) : '')),
+                method: 'POST',
+                data: fd,
+                processData: false,
+                contentType: false,
+                success: function () {
+                    $('.upload-bar-' + i).css('width', '100%');
+                    $('.upload-pct-' + i).html('<b style="color:#2e7d32;">done</b>');
+                    oneDone();
+                },
+                error: function (xhr) {
+                    var msg = xhr.responseText || 'failed';
+                    try { msg = JSON.parse(msg).errMsg || msg; } catch (ex) {}
+                    $('.upload-pct-' + i).html('<b class="red-text">failed</b>');
+                    M.toast({html: escapeHtml(f.name) + ': ' + msg});
+                    oneDone();
+                }
+            });
         });
     }
 
