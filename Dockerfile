@@ -9,17 +9,17 @@ COPY entrypoint.sh entrypoint.sh
 RUN chmod +x entrypoint.sh
 
 # 所有配置项默认值(均可通过 docker run -e 覆盖,entrypoint.sh 映射为 -D 优先于 jar 内 application.properties)
-ENV SERVER_PORT=443
-ENV SERVER_SSL_ENABLED=true
-ENV SERVER_SSL_HOST=localhost
+ENV SERVER_PORT=80
+ENV SERVER_SSL_ENABLED=false
+ENV SERVER_SSL_HOST=127.0.0.1
 ENV SERVER_SSL_CERT_DIR=/app/certs
 ENV SERVER_SSL_KEYSTORE_PASSWORD=plinth
-ENV MINIO_ENDPOINT=http://minio:9000
+ENV MINIO_ENDPOINT=http://127.0.0.1:9000
 ENV MINIO_ACCESS_KEY=minioadmin
 ENV MINIO_SECRET_KEY=minioadmin
 ENV MINIO_REGION=
 ENV MINIO_BUCKET_PREFIX=user-
-ENV S3_EXTERNAL_ENDPOINT=https://localhost/s3
+ENV S3_EXTERNAL_ENDPOINT=http://127.0.0.1/s3
 ENV ADMIN_DEFAULT_USERNAME=admin
 ENV ADMIN_DEFAULT_PASSWORD=admin
 ENV TOKEN_EXPIRE=86400
@@ -34,6 +34,6 @@ ENV MYBATIS_MAPPER_SCAN=yi.shi.plinth.db.mapper
 VOLUME ["/app/data", "/app/certs"]
 
 # HTTPS 端口(SERVER_SSL_ENABLED=false 时为 HTTP)
-EXPOSE 443
+EXPOSE 80
 
 ENTRYPOINT ["./entrypoint.sh"]
