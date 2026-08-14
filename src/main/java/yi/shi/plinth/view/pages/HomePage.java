@@ -68,6 +68,7 @@ public class HomePage extends Page {
                         ),
                         input().withType("hidden").withId("bucket").withValue(bucket),
                         input().withType("file").withId("fileInput").withStyle("display:none;"),
+                        div().withId("storageInfo").withStyle("margin-bottom:12px;"),
                         div().withClass("input-field").withStyle("margin:0 0 8px 0;").with(
                                 input().withType("text").withId("fileSearch").attr("placeholder", "Search files by name"),
                                 label("Search").withFor("fileSearch")

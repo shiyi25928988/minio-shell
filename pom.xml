@@ -18,7 +18,7 @@
         <guice.version>7.0.0</guice.version>
         <maven.plugin.version>3.1.0</maven.plugin.version>
         <sa-token.version>1.44.0</sa-token.version>
-        <guava.version>33.5.0-jre</guava.version>
+        <guava.version>33.6.0-jre</guava.version>
         <jackson.version>3.0.4</jackson.version>
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.20</logback.version>
@@ -34,10 +34,11 @@
         <mybatis.guice.version>4.0.0</mybatis.guice.version>
         <j2html.version>1.6.0</j2html.version>
         <h2.version>2.2.224</h2.version>
-        <bouncycastle.version>1.78.1</bouncycastle.version>
+        <bouncycastle.version>1.84</bouncycastle.version>
         <materialize.version>1.0.0</materialize.version>
         <jquery.version>3.7.1</jquery.version>
-        <minio.version>8.5.17</minio.version>
+        <minio.version>9.0.3</minio.version>
+        <okhttp.version>5.3.2</okhttp.version>
     </properties>
 
     <dependencies>
@@ -203,22 +204,33 @@
             <artifactId>jquery</artifactId>
             <version>${jquery.version}</version>
         </dependency>
-        <dependency>
-            <groupId>com.squareup.okhttp3</groupId>
-            <artifactId>okhttp</artifactId>
-            <version>4.12.0</version>
-        </dependency>
+        <!-- MinIO 数据面 + 管理面 SDK（同版本）。9.0.x 传递 okhttp 5.x / Jackson 2.x / Kotlin stdlib；
+             项目代码不直接引用 okhttp，故不再单独声明 okhttp，由 minio 统一带入。 -->
         <dependency>
             <groupId>io.minio</groupId>
             <artifactId>minio</artifactId>
             <version>${minio.version}</version>
-            <exclusions>
-                <!-- 项目已直接依赖 okhttp 4.12.0，用统一版本，排除 MinIO 传递的旧版 -->
-                <exclusion>
-                    <groupId>com.squareup.okhttp3</groupId>
-                    <artifactId>okhttp</artifactId>
-                </exclusion>
-            </exclusions>
+        </dependency>
+        <!-- MinIO Admin API：getServerInfo 查询每块磁盘的 totalSpace/usedSpace/availableSpace。 -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio-admin</artifactId>
+            <version>${minio.version}</version>
+        </dependency>
+        <!-- okhttp 5.x 是 Kotlin Multiplatform：Maven 默认只拉到 767B 的 stub okhttp jar（无类），
+             真正的 JVM 类（HttpUrl/MediaType/OkHttpClient）在 okhttp-jvm，需显式声明。 -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp-jvm</artifactId>
+            <version>${okhttp.version}</version>
+        </dependency>
+        <!-- minio/minio-admin 依赖 Jackson 2.x (com.fasterxml)。项目自身的 Jackson 3 (tools.jackson)
+             传递带入 jackson-annotations 2.20，缺少 minio-admin 用到的 JsonSerializeAs（2.21 新增）。
+             显式对齐到 2.21（与 minio-admin 声明一致），覆盖 2.20。 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>2.21</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>

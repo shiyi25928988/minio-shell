@@ -12,9 +12,11 @@ import io.minio.RemoveObjectArgs;
 import io.minio.Result;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
+import io.minio.admin.GetServerInfoResponse;
+import io.minio.admin.MinioAdminClient;
 import io.minio.errors.ErrorResponseException;
-import io.minio.messages.Bucket;
 import io.minio.messages.Item;
+import io.minio.messages.ListAllMyBucketsResult;
 import lombok.extern.slf4j.Slf4j;
 import yi.shi.plinth.file.dto.FileItem;
 
@@ -46,6 +48,7 @@ public class MinioService {
     private static final String SECRET_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/+";
 
     private final MinioClient client;
+    private final MinioAdminClient adminClient;
     private final String bucketPrefix;
 
     public MinioService() {
@@ -60,6 +63,14 @@ public class MinioService {
             b.region(region);
         }
         this.client = b.build();
+        // Admin 客户端复用同一 endpoint/凭据，用于 getServerInfo 查询磁盘用量。
+        MinioAdminClient.Builder ab = MinioAdminClient.builder()
+                .endpoint(endpoint)
+                .credentials(accessKey, secretKey);
+        if (region != null && !region.isBlank()) {
+            ab.region(region);
+        }
+        this.adminClient = ab.build();
         this.bucketPrefix = System.getProperty("minio.bucketPrefix", "user-");
         log.info("MinioService initialized: endpoint={}, bucketPrefix={}", endpoint, bucketPrefix);
     }
@@ -122,7 +133,7 @@ public class MinioService {
         PutObjectArgs.Builder b = PutObjectArgs.builder()
                 .bucket(bucket)
                 .object(object)
-                .stream(stream, size, -1);
+                .stream(stream, size, -1L);
         if (contentType != null && !contentType.isBlank()) {
             b.contentType(contentType);
         }
@@ -152,8 +163,52 @@ public class MinioService {
     }
 
     /** 列出所有桶（admin 用，查看全部用户）。 */
-    public List<Bucket> listBuckets() throws Exception {
+    public List<ListAllMyBucketsResult.Bucket> listBuckets() throws Exception {
         return client.listBuckets();
+    }
+
+    /**
+     * 查询 MinIO 集群磁盘用量：聚合 {@code getServerInfo} 返回的每块磁盘的
+     * {@code totalSpace/usedSpace/availableSpace}。
+     *
+     * <p>MinIO 不可达或管理员凭据无权限时返回 {@code null}（仅记录警告，不抛出），
+     * 以免拖垮文件浏览器加载。
+     */
+    public DiskUsage getDiskUsage() {
+        try {
+            GetServerInfoResponse info = adminClient.getServerInfo();
+            long total = 0, used = 0, avail = 0;
+            int totalDisks = 0, onlineDisks = 0;
+            if (info.servers() != null) {
+                for (GetServerInfoResponse.ServerProperties sp : info.servers()) {
+                    if (sp.disks() == null) {
+                        continue;
+                    }
+                    for (GetServerInfoResponse.ServerProperties.Disk d : sp.disks()) {
+                        totalDisks++;
+                        String state = d.state();
+                        if (state == null || !"offline".equalsIgnoreCase(state)) {
+                            onlineDisks++;
+                        }
+                        if (d.totalSpace() != null) {
+                            total += d.totalSpace().longValue();
+                        }
+                        if (d.usedSpace() != null) {
+                            used += d.usedSpace().longValue();
+                        }
+                        if (d.availableSpace() != null) {
+                            avail += d.availableSpace().longValue();
+                        }
+                    }
+                }
+            }
+            double util = total > 0 ? (used * 100.0 / total) : 0.0;
+            return new DiskUsage(total, used, avail, totalDisks, onlineDisks,
+                    Math.round(util * 100.0) / 100.0);
+        } catch (Exception e) {
+            log.warn("getDiskUsage failed: {}", e.getMessage());
+            return null;
+        }
     }
 
     /** 生成 20 位随机 access key（字母数字）。 */
@@ -172,7 +227,7 @@ public class MinioService {
         client.putObject(PutObjectArgs.builder()
                 .bucket(bucket)
                 .object(normalized)
-                .stream(new ByteArrayInputStream(new byte[0]), 0, -1)
+                .stream(new ByteArrayInputStream(new byte[0]), 0L, -1L)
                 .contentType("application/x-directory")
                 .build());
     }

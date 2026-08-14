@@ -42,6 +42,33 @@ $(document).ready(function () {
         });
     }
 
+    // 磁盘用量：拉取 MinIO 集群剩余空间，在文件浏览器顶部展示用量条
+    function loadStorage() {
+        $.ajax({
+            url: '/file/storage',
+            method: 'GET',
+            cache: false,
+            success: function (u) {
+                if (!u || !u.totalBytes) {
+                    $('#storageInfo').html('');
+                    return;
+                }
+                var pct = u.utilizationPercent || 0;
+                var barColor = pct >= 90 ? '#e53935' : (pct >= 70 ? '#fb8c00' : '#43a047');
+                var txtColor = pct >= 90 ? 'red-text' : (pct >= 70 ? 'orange-text' : 'green-text');
+                var html = '<div class="card-panel" style="padding:12px 16px;">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;font-size:0.9rem;flex-wrap:wrap;">' +
+                      '<span class="grey-text text-darken-2"><b>Storage</b> &nbsp; ' + formatSize(u.usedBytes) + ' / ' + formatSize(u.totalBytes) + ' used</span>' +
+                      '<span class="' + txtColor + '" style="font-weight:bold;">' + pct.toFixed(1) + '% &middot; ' + formatSize(u.availableBytes) + ' free</span>' +
+                    '</div>' +
+                    '<div class="progress" style="height:8px;margin:8px 0 0 0;"><div class="determinate" style="width:' + pct + '%;background-color:' + barColor + ';"></div></div>' +
+                    '</div>';
+                $('#storageInfo').html(html);
+            },
+            error: function () { $('#storageInfo').html(''); }
+        });
+    }
+
     function renderBreadcrumb() {
         var parts = prefix ? prefix.replace(/\/$/, '').split('/') : [];
         var html = '<a href="#" data-p="" class="crumb-link">Home</a>';
@@ -263,6 +290,7 @@ $(document).ready(function () {
                 M.toast({html: list.length + ' file(s) uploaded'});
                 $('#fileInput').val('');
                 loadFiles();
+                loadStorage();
                 setTimeout(function () { $('#uploadProgress').hide(); }, 2000);
             }
         }
@@ -424,4 +452,5 @@ $(document).ready(function () {
     function escapeAttr(s) { return escapeHtml(s); }
 
     loadFiles();
+    loadStorage();
 });

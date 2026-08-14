@@ -15,6 +15,7 @@ import yi.shi.plinth.http.HttpRespHelper;
 import yi.shi.plinth.http.MimeType;
 import yi.shi.plinth.http.result.BINARY;
 import yi.shi.plinth.http.result.JSON;
+import yi.shi.plinth.minio.DiskUsage;
 import yi.shi.plinth.minio.MinioService;
 import yi.shi.plinth.servlet.ServletHelper;
 import yi.shi.plinth.share.ShareService;
@@ -209,10 +210,27 @@ public class FileApi {
     @AUTH(orRole = "admin")
     public JSON<List<String>> buckets() throws Exception {
         List<String> names = new ArrayList<>();
-        for (io.minio.messages.Bucket bk : minioService.listBuckets()) {
+        for (io.minio.messages.ListAllMyBucketsResult.Bucket bk : minioService.listBuckets()) {
             names.add(bk.name());
         }
         return new JSON<>(names);
+    }
+
+    /**
+     * 查询 MinIO 集群磁盘用量（总容量/已用/可用/磁盘数）。
+     *
+     * <p>所有登录用户可见--这是共享 MinIO 集群的物理磁盘剩余空间，非单用户配额。
+     * MinIO 不可达时返回全 0（前端见 totalBytes=0 即隐藏用量条）。
+     */
+    @GET
+    @HttpPath("/file/storage")
+    @AUTH
+    public JSON<DiskUsage> storage() {
+        DiskUsage usage = minioService.getDiskUsage();
+        if (usage == null) {
+            usage = new DiskUsage(0, 0, 0, 0, 0, 0);
+        }
+        return new JSON<>(usage);
     }
 
     /**
