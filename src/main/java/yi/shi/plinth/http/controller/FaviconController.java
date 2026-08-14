@@ -13,7 +13,7 @@ public class FaviconController {
     @HttpPath("/favicon.ico")
     public BINARY getIcon(){
         BINARY binary = new BINARY();
-        binary.setData(this.getClass().getResourceAsStream("/static/icon/favicon.ico"));
+        binary.setData(this.getClass().getResourceAsStream("/icon/favicon-32x32-blue.png"));
         binary.setMimeType(MimeType.IMAGE_ICON);
         return binary;
     }
