@@ -119,7 +119,10 @@ $(document).ready(function () {
                 ? '<div class="grey-text" style="font-size:0.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(it.name) + '</div>'
                 : '';
             html += '<li class="collection-item" style="display:flex;align-items:center;">' +
-                '<span class="file-name" style="cursor:pointer;flex:1;overflow:hidden;margin-right:8px;" data-path="' + escapeAttr(it.name) + '" data-dir="' + it.dir + '">' +
+                '<label style="display:flex;align-items:center;flex:none;margin-right:10px;cursor:pointer;">' +
+                    '<input type="checkbox" class="item-check" data-path="' + escapeAttr(it.name) + '" data-dir="' + it.dir + '">' +
+                    '<span style="height:25px;"></span></label>' +
+                '<span class="file-name" style="cursor:pointer;flex:1;overflow:hidden;margin-right:8px;" data-path="' + escapeAttr(it.name) + '" data-dir="' + it.dir + '" data-size="' + (it.size || 0) + '">' +
                 '<span style="margin-right:8px;">' + icon + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(it.display) + '</span>' +
                 pathLine + '</span>' +
                 size +
@@ -133,6 +136,9 @@ $(document).ready(function () {
         html += '</ul>';
         $('#fileContainer').html(html);
 
+        $('.item-check').change(updateBatchBar);
+        updateBatchBar();
+
         $('.file-name').click(function () {
             var p = $(this).data('path');
             if ($(this).data('dir') === true || $(this).data('dir') === 'true') {
@@ -144,6 +150,14 @@ $(document).ready(function () {
                 if (isImage(ext)) { previewFile(p, 'image'); }
                 else if (isVideo(ext)) { previewFile(p, 'video'); }
                 else if (isPdf(ext)) { previewFile(p, 'pdf'); }
+                else if (isAudio(ext)) { previewFile(p, 'audio'); }
+                else if (isText(ext)) {
+                    var sz = $(this).data('size');
+                    if (typeof sz === 'number' && sz > 2 * 1024 * 1024) {
+                        M.toast({html: 'File too large to preview, downloading'});
+                        downloadFile(p);
+                    } else { previewText(p, ext); }
+                }
                 else { downloadFile(p); }
             }
         });
@@ -166,13 +180,22 @@ $(document).ready(function () {
         return i >= 0 ? name.substring(i + 1).toLowerCase() : '';
     }
     function isImage(ext) {
-        return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tif', 'tiff', 'ico'].indexOf(ext) >= 0;
+        // tif/tiff 不列：主流浏览器均不支持内联渲染 TIFF，点击直接下载
+        return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'].indexOf(ext) >= 0;
     }
     function isVideo(ext) {
         return ['mp4', 'webm', 'ogg', 'mov', 'm4v'].indexOf(ext) >= 0;
     }
     function isPdf(ext) {
         return ext === 'pdf';
+    }
+    function isAudio(ext) {
+        return ['mp3', 'wav', 'ogg', 'oga', 'm4a', 'flac', 'aac', 'opus'].indexOf(ext) >= 0;
+    }
+    function isText(ext) {
+        return ['txt', 'md', 'markdown', 'log', 'csv', 'json', 'xml', 'yml', 'yaml', 'ini', 'conf', 'properties',
+                'sql', 'js', 'ts', 'java', 'py', 'go', 'rs', 'c', 'cpp', 'cc', 'h', 'hpp',
+                'html', 'htm', 'css', 'scss', 'sh', 'bat', 'rb', 'php', 'kt', 'swift', 'vue', 'toml'].indexOf(ext) >= 0;
     }
     function previewFile(path, type) {
         var url = withBucket('/file/raw?path=' + encodeURIComponent(path));
@@ -182,6 +205,8 @@ $(document).ready(function () {
         } else if (type === 'pdf') {
             // 浏览器内置 PDF 查看器在 iframe 中内联渲染
             html = '<iframe src="' + url + '" style="width:100%;height:75vh;border:0;"></iframe>';
+        } else if (type === 'audio') {
+            html = '<audio src="' + url + '" controls autoplay style="width:100%;display:block;margin:0 auto;"></audio>';
         } else {
             html = '<video src="' + url + '" controls autoplay style="max-width:100%;max-height:75vh;display:block;margin:0 auto;"></video>';
         }
@@ -189,35 +214,131 @@ $(document).ready(function () {
         var modal = M.Modal.getInstance($('#previewModal')[0]);
         if (modal) { modal.open(); }
     }
+    function previewText(path, ext) {
+        // 文本类预览：XHR 以 text 拉取后放入 <pre>，不受对象存储 content-type 影响
+        var url = withBucket('/file/raw?path=' + encodeURIComponent(path));
+        $('#previewContent').html('<p class="grey-text center-align">Loading...</p>');
+        var modal = M.Modal.getInstance($('#previewModal')[0]);
+        if (modal) { modal.open(); }
+        $.ajax({
+            url: url,
+            method: 'GET',
+            dataType: 'text',
+            cache: false,
+            success: function (data) {
+                var text = (data === null || data === undefined) ? '' : String(data);
+                var truncated = false;
+                if (text.length > 300000) { text = text.substring(0, 300000); truncated = true; }
+                if (ext === 'json') {
+                    try { text = JSON.stringify(JSON.parse(data), null, 2); } catch (ex) { /* 保持原文 */ }
+                }
+                var note = truncated
+                    ? '<p class="grey-text left-align" style="font-size:0.8rem;">Preview truncated &mdash; download to view full content.</p>'
+                    : '';
+                $('#previewContent').html(note +
+                    '<pre style="white-space:pre-wrap;word-break:break-word;text-align:left;max-height:70vh;overflow:auto;background:#f5f5f5;padding:12px;border-radius:4px;font-size:0.85rem;">' +
+                    escapeHtml(text) + '</pre>');
+            },
+            error: function (xhr) {
+                var msg = 'preview failed';
+                try { msg = JSON.parse(xhr.responseText).errMsg || msg; } catch (ex) {}
+                M.toast({html: msg});
+                var inst = M.Modal.getInstance($('#previewModal')[0]);
+                if (inst) { inst.close(); }
+            }
+        });
+    }
 
-    var pendingDeletePath = null;
-    function deleteFile(path) {
-        pendingDeletePath = path;
+    // ---- 删除（单个与批量共用一个确认弹窗）----
+    var pendingDeletePaths = null;
+    function displayNameOf(path) {
         var name = path.lastIndexOf('/') >= 0 ? path.substring(path.lastIndexOf('/') + 1) : path;
-        if (name.endsWith('/')) { name = name.substring(0, name.length() - 1); }
-        $('#confirmDeleteName').text(name || path);
+        if (name.endsWith('/')) { name = name.substring(0, name.length - 1); }
+        return name;
+    }
+    function deleteFile(path) { deleteFiles([path]); }
+    function deleteFiles(paths) {
+        if (!paths || !paths.length) { return; }
+        pendingDeletePaths = paths;
+        var label = paths.length === 1 ? (displayNameOf(paths[0]) || paths[0]) : paths.length + ' items';
+        $('#confirmDeleteName').text(label);
         var modal = M.Modal.getInstance($('#confirmDeleteModal')[0]) || M.Modal.init($('#confirmDeleteModal')[0]);
         modal.open();
     }
     $(document).on('click', '#confirmDeleteBtn', function (e) {
         e.preventDefault();
-        var path = pendingDeletePath;
-        if (!path) { return; }
-        pendingDeletePath = null;
+        var paths = pendingDeletePaths;
+        if (!paths || !paths.length) { return; }
+        pendingDeletePaths = null;
         var inst = M.Modal.getInstance($('#confirmDeleteModal')[0]);
         if (inst) { inst.close(); }
-        $.ajax({
-            url: withBucket('/file/delete?path=' + encodeURIComponent(path)),
-            method: 'GET',
-            cache: false,
-            success: function () { M.toast({html: 'deleted'}); },
-            error: function (xhr) {
-                var msg = xhr.responseText || 'delete failed';
-                try { msg = JSON.parse(msg).errMsg || msg; } catch (e) {}
-                M.toast({html: msg});
-            },
-            complete: function () { loadFiles(); }
+        var ok = 0, fail = 0, failMsg = '', done = 0;
+        paths.forEach(function (p) {
+            $.ajax({
+                url: withBucket('/file/delete?path=' + encodeURIComponent(p)),
+                method: 'GET',
+                cache: false,
+                success: function () { ok++; },
+                error: function (xhr) {
+                    fail++;
+                    if (!failMsg) {
+                        failMsg = xhr.responseText || 'delete failed';
+                        try { failMsg = JSON.parse(failMsg).errMsg || failMsg; } catch (ex) {}
+                    }
+                },
+                complete: function () {
+                    done++;
+                    if (done === paths.length) {
+                        M.toast({html: ok + ' deleted' + (fail ? ', ' + fail + ' failed: ' + failMsg : '')});
+                        loadFiles();
+                        loadStorage();
+                    }
+                }
+            });
         });
+    });
+
+    // ---- 勾选与批量操作 ----
+    function selectedItems() {
+        var items = [];
+        $('.item-check:checked').each(function () {
+            items.push({
+                path: $(this).data('path'),
+                dir: $(this).data('dir') === true || $(this).data('dir') === 'true'
+            });
+        });
+        return items;
+    }
+    function updateBatchBar() {
+        var boxes = $('.item-check');
+        var checked = $('.item-check:checked');
+        $('#selCount').text(checked.length ? checked.length + ' selected' : '');
+        $('#batchDownloadBtn').toggleClass('disabled', checked.length === 0);
+        $('#batchDeleteBtn').toggleClass('disabled', checked.length === 0);
+        $('#selectAllCheck').prop('checked', boxes.length > 0 && checked.length === boxes.length);
+    }
+    $('#selectAllCheck').change(function () {
+        $('.item-check').prop('checked', $(this).prop('checked'));
+        updateBatchBar();
+    });
+    $('#batchDownloadBtn').click(function (e) {
+        e.preventDefault();
+        if ($(this).hasClass('disabled')) { return; }
+        var files = selectedItems().filter(function (it) { return !it.dir; });
+        if (!files.length) {
+            M.toast({html: 'no files selected (folders cannot be downloaded)'});
+            return;
+        }
+        // 逐个触发下载，稍作间隔避免浏览器拦截连续下载
+        files.forEach(function (f, i) {
+            setTimeout(function () { downloadFile(f.path); }, i * 400);
+        });
+        M.toast({html: files.length + ' download(s) started'});
+    });
+    $('#batchDeleteBtn').click(function (e) {
+        e.preventDefault();
+        if ($(this).hasClass('disabled')) { return; }
+        deleteFiles(selectedItems().map(function (it) { return it.path; }));
     });
 
     // ---- 分享 ----
