@@ -124,9 +124,9 @@ $(document).ready(function () {
                 pathLine + '</span>' +
                 size +
                 '<span class="file-actions" style="white-space:nowrap;">' +
-                  (it.dir ? '' : '<a href="#" class="share-link" style="color:#009688;font-size:1.15rem;margin-left:4px;" title="Share" data-path="' + escapeAttr(it.name) + '">🔗</a>') +
-                  (it.dir ? '' : '<a href="#" class="dl-link" style="color:#1976d2;font-size:1.15rem;margin-left:8px;" title="Download" data-path="' + escapeAttr(it.name) + '">⬇️</a>') +
-                  '<a href="#" class="del-link" style="color:#e53935;font-size:1.15rem;margin-left:8px;" title="Delete" data-path="' + escapeAttr(it.name) + '" data-dir="' + it.dir + '">🗑️</a>' +
+                  (it.dir ? '' : '<a href="#" class="share-link" style="margin-left:4px;" title="Share" data-path="' + escapeAttr(it.name) + '"><img src="/images/link.svg" alt="Share" style="width:18px;height:18px;vertical-align:middle;"></a>') +
+                  (it.dir ? '' : '<a href="#" class="dl-link" style="margin-left:8px;" title="Download" data-path="' + escapeAttr(it.name) + '"><img src="/images/download.svg" alt="Download" style="width:18px;height:18px;vertical-align:middle;"></a>') +
+                  '<a href="#" class="del-link" style="margin-left:8px;" title="Delete" data-path="' + escapeAttr(it.name) + '" data-dir="' + it.dir + '"><img src="/images/delete.svg" alt="Delete" style="width:18px;height:18px;vertical-align:middle;"></a>' +
                 '</span>' +
                 '</li>';
         });
@@ -143,6 +143,7 @@ $(document).ready(function () {
                 var ext = extOf(p);
                 if (isImage(ext)) { previewFile(p, 'image'); }
                 else if (isVideo(ext)) { previewFile(p, 'video'); }
+                else if (isPdf(ext)) { previewFile(p, 'pdf'); }
                 else { downloadFile(p); }
             }
         });
@@ -170,11 +171,17 @@ $(document).ready(function () {
     function isVideo(ext) {
         return ['mp4', 'webm', 'ogg', 'mov', 'm4v'].indexOf(ext) >= 0;
     }
+    function isPdf(ext) {
+        return ext === 'pdf';
+    }
     function previewFile(path, type) {
         var url = withBucket('/file/raw?path=' + encodeURIComponent(path));
         var html;
         if (type === 'image') {
             html = '<img src="' + url + '" style="max-width:100%;max-height:75vh;display:block;margin:0 auto;">';
+        } else if (type === 'pdf') {
+            // 浏览器内置 PDF 查看器在 iframe 中内联渲染
+            html = '<iframe src="' + url + '" style="width:100%;height:75vh;border:0;"></iframe>';
         } else {
             html = '<video src="' + url + '" controls autoplay style="max-width:100%;max-height:75vh;display:block;margin:0 auto;"></video>';
         }
