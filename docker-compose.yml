@@ -1,0 +1,50 @@
+# 使用前:
+#   1. mvn package -DskipTests        # 生成 target/plinth-jre-21.jar
+#   2. docker compose up -d --build
+#
+# 所有环境变量集中在此(与 entrypoint.sh 的 -D 映射一一对应),按需修改。
+#
+# 嵌入式 H2 数据库文件通过卷映射落到宿主目录,容器重建/升级后数据仍在:
+#   ./data/minio_shell.mv.db   <- sys_user / sys_share 表数据
+#   ./certs/                   <- HTTPS 证书(启用 SERVER_SSL_ENABLED=true 时)
+services:
+  minio-shell:
+    build: .
+    image: minio-shell:latest
+    container_name: minio-shell
+    ports:
+      - "8080:80"
+    environment:
+      # ---- 服务端口 / HTTPS ----
+      SERVER_PORT: "80"
+      SERVER_SSL_ENABLED: "false"
+      SERVER_SSL_HOST: "127.0.0.1"
+      SERVER_SSL_CERT_DIR: /app/certs
+      SERVER_SSL_KEYSTORE_PASSWORD: plinth
+      # ---- MinIO(管理凭据,容器经 host.docker.internal 访问宿主机上的 MinIO) ----
+      MINIO_ENDPOINT: http://host.docker.internal:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_REGION: ""
+      MINIO_BUCKET_PREFIX: "user-"
+      # S3 兼容入口对外地址(mc/aws-cli 填这个)
+      S3_EXTERNAL_ENDPOINT: http://host.docker.internal:8080/s3
+      # ---- 内置管理员(仅空库首次创建时生效) ----
+      ADMIN_DEFAULT_USERNAME: admin
+      ADMIN_DEFAULT_PASSWORD: admin123
+      # ---- 会话 ----
+      TOKEN_EXPIRE: "86400"
+      # ---- 嵌入式 H2 数据库 ----
+      JDBC_DRIVER: org.h2.Driver
+      JDBC_URL: "jdbc:h2:file:/app/data/minio_shell;MODE=MySQL;DB_CLOSE_DELAY=-1"
+      JDBC_USERNAME: sa
+      JDBC_PASSWORD: ""
+      # ---- MyBatis ----
+      MYBATIS_ENVIRONMENT_ID: development
+      MYBATIS_MAPPER_SCAN: yi.shi.plinth.db.mapper
+    volumes:
+      - ./data:/app/data     # H2 数据库文件
+      - ./certs:/app/certs   # HTTPS 证书
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
