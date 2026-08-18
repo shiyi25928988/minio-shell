@@ -80,7 +80,7 @@ public class HomePage extends Page {
                                         span("Select all").withClass("grey-text text-darken-1").withStyle("margin-left:6px;font-size:0.9rem;")
                                 ),
                                 span().withId("selCount").withClass("grey-text").withStyle("margin-left:12px;font-size:0.85rem;"),
-                                div().withClass("right").withStyle("display:flex;align-items:center;").with(
+                                div().withStyle("display:flex;align-items:center;margin-left:auto;").with(
                                         a("Download").withClass("btn blue waves-effect waves-light disabled")
                                                 .withId("batchDownloadBtn").withStyle("margin-left:8px;"),
                                         a("Delete").withClass("btn red waves-effect waves-light disabled")
