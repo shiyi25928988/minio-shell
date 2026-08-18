@@ -80,24 +80,22 @@ public class HomePage extends Page {
                                         span("Select all").withClass("grey-text text-darken-1").withStyle("margin-left:6px;font-size:0.9rem;")
                                 ),
                                 span().withId("selCount").withClass("grey-text").withStyle("margin-left:12px;font-size:0.85rem;"),
-                                div().withClass("right").with(
+                                div().withClass("right").withStyle("display:flex;align-items:center;").with(
                                         a("Download").withClass("btn blue waves-effect waves-light disabled")
                                                 .withId("batchDownloadBtn").withStyle("margin-left:8px;"),
                                         a("Delete").withClass("btn red waves-effect waves-light disabled")
-                                                .withId("batchDeleteBtn").withStyle("margin-left:8px;")
+                                                .withId("batchDeleteBtn").withStyle("margin-left:8px;"),
+                                        span("Sort by").withClass("grey-text").withStyle("margin-left:16px;margin-right:8px;font-size:0.85rem;"),
+                                        select().withClass("browser-default").withId("sortKeySelect").withStyle("width:150px;margin:0;height:30px;padding:0 6px;").with(
+                                                option("Name").withValue("name").attr("selected", "selected"),
+                                                option("Size").withValue("size"),
+                                                option("Upload time").withValue("time")
+                                        ),
+                                        a("↑").withId("sortDirBtn").withHref("#!").withClass("btn-flat waves-effect grey-text text-darken-1")
+                                                .withStyle("padding:0 10px;line-height:30px;").attr("title", "Toggle ascending/descending")
                                 )
                         ),
                         div().withId("uploadProgress").withStyle("display:none;margin-bottom:8px;"),
-                        div().withId("sortBar").withStyle("display:flex;align-items:center;margin-bottom:8px;").with(
-                                span("Sort by").withClass("grey-text").withStyle("margin-right:8px;font-size:0.85rem;"),
-                                select().withClass("browser-default").withId("sortKeySelect").withStyle("width:150px;margin:0;height:30px;padding:0 6px;").with(
-                                        option("Name").withValue("name").attr("selected", "selected"),
-                                        option("Size").withValue("size"),
-                                        option("Upload time").withValue("time")
-                                ),
-                                a("↑").withId("sortDirBtn").withHref("#!").withClass("btn-flat waves-effect grey-text text-darken-1")
-                                        .withStyle("padding:0 10px;line-height:30px;").attr("title", "Toggle ascending/descending")
-                        ),
                         div().withId("fileContainer"),
                         buildShareModal(),
                         buildPreviewModal(),
