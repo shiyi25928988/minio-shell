@@ -416,29 +416,45 @@ $(document).ready(function () {
 
     $('#fileInput').change(function () { uploadFiles(this.files); });
 
+    // 手动中断：点击某个上传项的 ✕ 调用 jqXHR.abort()，服务端连接断开、对象不会写入
+    var currentUploads = null;
+    $(document).on('click', '.upload-cancel', function (e) {
+        e.preventDefault();
+        var i = $(this).data('i');
+        if (currentUploads && currentUploads[i]) { currentUploads[i].abort(); }
+    });
+
     function uploadFiles(files) {
         if (!files || !files.length) { return; }
+        // 上传进行中不叠加新批次：进度面板即指示器，避免取消句柄被覆盖
+        if (currentUploads) {
+            M.toast({html: 'Upload already in progress'});
+            $('#fileInput').val('');
+            return;
+        }
         var list = Array.prototype.slice.call(files);
-        // 为每个文件生成独立的进度项（文件名 + 进度条 + 百分比）
+        // 为每个文件生成独立的进度项（文件名 + 进度条 + 百分比 + 取消按钮）
         var html = '';
         list.forEach(function (f, i) {
             html += '<div class="upload-item" style="margin-bottom:10px;">' +
                 '<div style="display:flex;justify-content:space-between;align-items:center;font-size:0.88rem;">' +
                   '<span class="grey-text text-darken-2" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;margin-right:8px;">' + escapeHtml(f.name) + ' <span class="grey-text">(' + formatSize(f.size) + ')</span></span>' +
+                  '<a href="#!" class="upload-cancel" data-i="' + i + '" title="Cancel upload" style="margin:0 8px;color:#e53935;font-size:1rem;">✕</a>' +
                   '<span class="upload-pct-' + i + ' grey-text" style="white-space:nowrap;"><b>0%</b></span>' +
                 '</div>' +
                 '<div class="progress" style="height:10px;margin-top:3px;"><div class="determinate upload-bar-' + i + '" style="width:0%;"></div></div>' +
                 '</div>';
         });
         $('#uploadProgress').html(html).show();
-        $('#busyIndicator').show();
 
         var remaining = list.length;
+        var okCount = 0;
+        currentUploads = [];
         function oneDone() {
             remaining--;
             if (remaining <= 0) {
-                $('#busyIndicator').hide();
-                M.toast({html: list.length + ' file(s) uploaded'});
+                currentUploads = null;
+                M.toast({html: okCount + ' of ' + list.length + ' file(s) uploaded'});
                 $('#fileInput').val('');
                 loadFiles();
                 loadStorage();
@@ -450,7 +466,7 @@ $(document).ready(function () {
         list.forEach(function (f, i) {
             var fd = new FormData();
             fd.append('file', f);
-            $.ajax({
+            currentUploads[i] = $.ajax({
                 xhr: function () {
                     var xhr = new XMLHttpRequest();
                     xhr.upload.addEventListener('progress', function (e) {
@@ -468,15 +484,23 @@ $(document).ready(function () {
                 processData: false,
                 contentType: false,
                 success: function () {
+                    $('.upload-cancel[data-i="' + i + '"]').hide();
                     $('.upload-bar-' + i).css('width', '100%');
                     $('.upload-pct-' + i).html('<b style="color:#2e7d32;">done</b>');
+                    okCount++;
                     oneDone();
                 },
-                error: function (xhr) {
-                    var msg = xhr.responseText || 'failed';
-                    try { msg = JSON.parse(msg).errMsg || msg; } catch (ex) {}
-                    $('.upload-pct-' + i).html('<b class="red-text">failed</b>');
-                    M.toast({html: escapeHtml(f.name) + ': ' + msg});
+                error: function (xhr, textStatus) {
+                    $('.upload-cancel[data-i="' + i + '"]').hide();
+                    if (textStatus === 'abort') {
+                        // 手动中断：标记为 canceled，不算失败
+                        $('.upload-pct-' + i).html('<b style="color:#fb8c00;">canceled</b>');
+                    } else {
+                        var msg = xhr.responseText || 'failed';
+                        try { msg = JSON.parse(msg).errMsg || msg; } catch (ex) {}
+                        $('.upload-pct-' + i).html('<b class="red-text">failed</b>');
+                        M.toast({html: escapeHtml(f.name) + ': ' + msg});
+                    }
                     oneDone();
                 }
             });
