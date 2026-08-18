@@ -88,6 +88,16 @@ public class HomePage extends Page {
                                 )
                         ),
                         div().withId("uploadProgress").withStyle("display:none;margin-bottom:8px;"),
+                        div().withId("sortBar").withStyle("display:flex;align-items:center;margin-bottom:8px;").with(
+                                span("Sort by").withClass("grey-text").withStyle("margin-right:8px;font-size:0.85rem;"),
+                                select().withClass("browser-default").withId("sortKeySelect").withStyle("width:150px;margin:0;height:30px;padding:0 6px;").with(
+                                        option("Name").withValue("name").attr("selected", "selected"),
+                                        option("Size").withValue("size"),
+                                        option("Upload time").withValue("time")
+                                ),
+                                a("↑").withId("sortDirBtn").withHref("#!").withClass("btn-flat waves-effect grey-text text-darken-1")
+                                        .withStyle("padding:0 10px;line-height:30px;").attr("title", "Toggle ascending/descending")
+                        ),
                         div().withId("fileContainer"),
                         buildShareModal(),
                         buildPreviewModal(),

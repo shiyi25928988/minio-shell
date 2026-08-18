@@ -103,18 +103,40 @@ $(document).ready(function () {
         return '📄';
     }
 
+    // 列表排序：key = name(首字母)/size/time，dir = asc/desc；文件夹始终排在文件前
+    var sortKey = 'name', sortDir = 'asc';
+
+    function formatTime(iso) {
+        if (!iso) { return ''; }
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) { return iso; }
+        function p(n) { return (n < 10 ? '0' : '') + n; }
+        return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+
     function renderFiles(items, showPath) {
         if (items.length === 0) {
             $('#fileContainer').html('<p class="grey-text center-align" style="margin-top:40px;">Empty folder &mdash; drag &amp; drop files here to upload</p>');
             return;
         }
         items.sort(function (a, b) {
-            return (a.dir === b.dir) ? a.display.localeCompare(b.display) : (a.dir ? -1 : 1);
+            var r;
+            if (a.dir !== b.dir) {
+                r = a.dir ? -1 : 1;
+            } else if (sortKey === 'size') {
+                r = (a.size || 0) - (b.size || 0);
+            } else if (sortKey === 'time') {
+                r = String(a.lastModified || '').localeCompare(String(b.lastModified || ''));
+            } else {
+                r = a.display.localeCompare(b.display);
+            }
+            return sortDir === 'desc' ? -r : r;
         });
         var html = '<ul class="collection">';
         items.forEach(function (it) {
             var icon = fileIcon(it.display, it.dir);
             var size = it.dir ? '' : '<span class="grey-text" style="margin-right:12px;">' + formatSize(it.size) + '</span>';
+            var time = '<span class="grey-text" style="margin-right:12px;font-size:0.8rem;white-space:nowrap;">' + formatTime(it.lastModified) + '</span>';
             var pathLine = (showPath && it.name && it.name !== it.display)
                 ? '<div class="grey-text" style="font-size:0.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(it.name) + '</div>'
                 : '';
@@ -126,6 +148,7 @@ $(document).ready(function () {
                 '<span style="margin-right:8px;">' + icon + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(it.display) + '</span>' +
                 pathLine + '</span>' +
                 size +
+                time +
                 '<span class="file-actions" style="white-space:nowrap;">' +
                   (it.dir ? '' : '<a href="#" class="share-link" style="margin-left:4px;" title="Share" data-path="' + escapeAttr(it.name) + '"><img src="/images/link.svg" alt="Share" style="width:18px;height:18px;vertical-align:middle;"></a>') +
                   (it.dir ? '' : '<a href="#" class="dl-link" style="margin-left:8px;" title="Download" data-path="' + escapeAttr(it.name) + '"><img src="/images/download.svg" alt="Download" style="width:18px;height:18px;vertical-align:middle;"></a>') +
@@ -512,6 +535,20 @@ $(document).ready(function () {
     });
 
     $('#refreshBtn').click(function (e) { e.preventDefault(); loadFiles(); });
+
+    // 排序：切换排序键或方向后重新加载并渲染当前视图（搜索状态下沿用当前查询词）
+    $('#sortKeySelect').on('change', function () {
+        sortKey = $(this).val() || 'name';
+        var q = $('#fileSearch').val() ? $('#fileSearch').val().trim() : '';
+        if (q) { doSearch(q); } else { loadFiles(); }
+    });
+    $('#sortDirBtn').click(function (e) {
+        e.preventDefault();
+        sortDir = (sortDir === 'asc') ? 'desc' : 'asc';
+        $(this).text(sortDir === 'asc' ? '↑' : '↓');
+        var q = $('#fileSearch').val() ? $('#fileSearch').val().trim() : '';
+        if (q) { doSearch(q); } else { loadFiles(); }
+    });
 
     // 搜索：防抖 300ms，空查询恢复当前文件夹列表
     var searchTimer = null;
