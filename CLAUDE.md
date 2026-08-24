@@ -64,6 +64,7 @@ All config lives in `System.getProperties()` (loaded by `CoreProperties`; suppor
 | Property | Used by | Default |
 |---|---|---|
 | `server.port` | `JettyModule` | `8080` |
+| `server.idleTimeout` | `JettyModule` (connector idle timeout, ms; guards large-file downloads against Jetty's 30s default) | `300000` |
 | `resources.folder` | `JettyModule` static handler | — |
 | `resources.contextPath` | `JettyModule` static handler | `/resources` |
 | `redis.host` / `redis.port` / `redis.password` | `RedisUtil` | `6379` / `""` |

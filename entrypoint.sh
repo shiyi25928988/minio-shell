@@ -4,6 +4,7 @@
 # 额外参数可通过 JAVA_OPTS 追加
 exec java \
   -Dserver.port="${SERVER_PORT:-80}" \
+  -Dserver.idleTimeout="${SERVER_IDLE_TIMEOUT:-300000}" \
   -Dserver.ssl.enabled="${SERVER_SSL_ENABLED:-false}" \
   -Dserver.ssl.host="${SERVER_SSL_HOST:-127.0.0.1}" \
   -Dserver.ssl.cert.dir="${SERVER_SSL_CERT_DIR:-/app/certs}" \

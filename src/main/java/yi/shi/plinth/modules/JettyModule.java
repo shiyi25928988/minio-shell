@@ -93,8 +93,12 @@ public class JettyModule extends AbstractModule {
 		/**
 		 * 配置 server.ssl.enabled=true 时启用 HTTPS（SslContextFactory + ServerConnector），
 		 * 否则使用普通 HTTP 连接器（向后兼容）。
+		 * 空闲超时由 server.idleTimeout(毫秒)配置，默认 5 分钟：
+		 * Jetty 默认 30s，大文件下载时客户端慢/写阻塞超过 30s 无字节往来会被掐断
+		 * （表现为下载中断后浏览器重新下载）。
 		 */
 		private static ServerConnector createConnector(Server server, int port) {
+			long idleTimeout = Long.parseLong(System.getProperty("server.idleTimeout", "300000"));
 			boolean sslEnabled = Boolean.parseBoolean(System.getProperty("server.ssl.enabled", "false"));
 			if (sslEnabled) {
 				SslContextFactory.Server ssl = new SslContextFactory.Server();
@@ -113,10 +117,12 @@ public class JettyModule extends AbstractModule {
 						new SslConnectionFactory(ssl, "http/1.1"),
 						new HttpConnectionFactory(httpsConfig));
 				sslConnector.setPort(port);
+				sslConnector.setIdleTimeout(idleTimeout);
 				return sslConnector;
 			}
 			ServerConnector httpConnector = new ServerConnector(server);
 			httpConnector.setPort(port);
+			httpConnector.setIdleTimeout(idleTimeout);
 			return httpConnector;
 		}
 	}
