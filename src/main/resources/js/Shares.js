@@ -41,6 +41,7 @@ $(document).ready(function () {
             $.ajax({
                 url: '/share/revoke?token=' + encodeURIComponent(token),
                 method: 'GET',
+                dataType: 'text',
                 success: function () { M.toast({html: 'revoked'}); loadShares(); },
                 error: function (xhr) { M.toast({html: (xhr.responseText || 'revoke failed')}); }
             });

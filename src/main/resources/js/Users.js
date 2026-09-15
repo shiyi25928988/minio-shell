@@ -32,6 +32,7 @@ $(document).ready(function () {
                     $.ajax({
                         url: '/user/reset-password?id=' + id,
                         method: 'GET',
+                        dataType: 'text',
                         cache: false,
                         success: function () { M.toast({html: 'password reset to 123456'}); },
                         error: function (xhr) {

@@ -97,6 +97,7 @@ $(document).ready(function () {
             $.ajax({
                 url: '/user/password',
                 method: 'POST',
+                dataType: 'text',
                 contentType: 'application/json',
                 data: JSON.stringify({oldPassword: oldP, newPassword: newP}),
                 success: function () {

@@ -301,6 +301,8 @@ $(document).ready(function () {
             $.ajax({
                 url: withBucket('/file/delete?path=' + encodeURIComponent(p)),
                 method: 'GET',
+                // 框架对 JSON<String> 返回裸 deleted(application/json)，不指定 text 会被误判解析失败计入 fail
+                dataType: 'text',
                 cache: false,
                 success: function () { ok++; },
                 error: function (xhr) {
@@ -619,6 +621,8 @@ $(document).ready(function () {
             $.ajax({
                 url: withBucket('/file/rename?path=' + encodeURIComponent($name.data('path')) + '&newName=' + encodeURIComponent(val)),
                 method: 'GET',
+                // 框架对 JSON<String> 返回裸字符串(application/json)，不指定 text 会被 jQuery 当 JSON 解析失败而走 error
+                dataType: 'text',
                 cache: false,
                 success: function () {
                     M.toast({html: 'Renamed to ' + escapeHtml(val)});
@@ -657,6 +661,7 @@ $(document).ready(function () {
         $.ajax({
             url: withBucket('/file/mkdir?path=' + encodeURIComponent(path)),
             method: 'GET',
+            dataType: 'text',
             cache: false,
             success: function () { M.toast({html: 'folder created'}); },
             error: function (xhr) { M.toast({html: (xhr.responseText || 'mkdir failed')}); },
