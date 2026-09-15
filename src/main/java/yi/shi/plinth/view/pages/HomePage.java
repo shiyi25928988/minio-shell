@@ -87,11 +87,11 @@ public class HomePage extends Page {
                                                 .withId("batchDeleteBtn").withStyle("margin-left:8px;"),
                                         span("Sort by").withClass("grey-text").withStyle("margin-left:16px;margin-right:8px;font-size:0.85rem;"),
                                         select().withClass("browser-default").withId("sortKeySelect").withStyle("width:150px;margin:0;height:30px;padding:0 6px;").with(
-                                                option("Name").withValue("name").attr("selected", "selected"),
+                                                option("Name").withValue("name"),
                                                 option("Size").withValue("size"),
-                                                option("Upload time").withValue("time")
+                                                option("Upload time").withValue("time").attr("selected", "selected")
                                         ),
-                                        a("↑").withId("sortDirBtn").withHref("#!").withClass("btn-flat waves-effect grey-text text-darken-1")
+                                        a("↓").withId("sortDirBtn").withHref("#!").withClass("btn-flat waves-effect grey-text text-darken-1")
                                                 .withStyle("padding:0 10px;line-height:30px;").attr("title", "Toggle ascending/descending")
                                 )
                         ),

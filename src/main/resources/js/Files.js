@@ -104,7 +104,8 @@ $(document).ready(function () {
     }
 
     // 列表排序：key = name(首字母)/size/time，dir = asc/desc；文件夹始终排在文件前
-    var sortKey = 'name', sortDir = 'asc';
+    // 默认按上传时间倒排：最后上传的文件在最顶部
+    var sortKey = 'time', sortDir = 'desc';
 
     function formatTime(iso) {
         if (!iso) { return ''; }
@@ -120,10 +121,10 @@ $(document).ready(function () {
             return;
         }
         items.sort(function (a, b) {
+            // 文件夹始终置顶，不受排序键/升降序影响
+            if (a.dir !== b.dir) { return a.dir ? -1 : 1; }
             var r;
-            if (a.dir !== b.dir) {
-                r = a.dir ? -1 : 1;
-            } else if (sortKey === 'size') {
+            if (sortKey === 'size') {
                 r = (a.size || 0) - (b.size || 0);
             } else if (sortKey === 'time') {
                 r = String(a.lastModified || '').localeCompare(String(b.lastModified || ''));
@@ -145,7 +146,7 @@ $(document).ready(function () {
                     '<input type="checkbox" class="item-check" data-path="' + escapeAttr(it.name) + '" data-dir="' + it.dir + '">' +
                     '<span style="height:25px;"></span></label>' +
                 '<span class="file-name" style="cursor:pointer;flex:1;overflow:hidden;margin-right:8px;" data-path="' + escapeAttr(it.name) + '" data-dir="' + it.dir + '" data-size="' + (it.size || 0) + '">' +
-                '<span style="margin-right:8px;">' + icon + '</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(it.display) + '</span>' +
+                '<span style="margin-right:8px;">' + icon + '</span><span class="rename-target" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(it.display) + '</span>' +
                 pathLine + '</span>' +
                 size +
                 time +
@@ -530,6 +531,114 @@ $(document).ready(function () {
         var oe = e.originalEvent;
         if (oe && oe.clientX <= 0 && oe.clientY <= 0) { unhighlight(); }
     });
+
+    // Ctrl+V 上传：剪贴板里是文件(资源管理器复制的文件/截图)就上传，纯文字忽略
+    $(document).on('paste', function (e) {
+        var cd = e.originalEvent && e.originalEvent.clipboardData;
+        if (!cd) { return; }
+        var files = [];
+        var items = cd.items;
+        if (items && items.length) {
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].kind === 'file') {
+                    var f = items[i].getAsFile();
+                    if (f) { files.push(f); }
+                }
+                // kind === 'string'(复制的文字)不处理，也不阻止输入框粘贴
+            }
+        } else if (cd.files && cd.files.length) {
+            files = Array.prototype.slice.call(cd.files);
+        }
+        if (!files.length) { return; }
+        e.preventDefault();
+        // 截图在剪贴板里通常叫 image.png/blob，改成时间戳文件名，避免多次截图互相覆盖
+        files = files.map(function (f) {
+            var n = f.name || '';
+            if ((!n || n === 'image.png' || /^blob/i.test(n)) && /^image\//.test(f.type || '')) {
+                var d = new Date();
+                function p(x) { return (x < 10 ? '0' : '') + x; }
+                var ts = d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' +
+                         p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+                return new File([f], 'screenshot-' + ts + '.png', {type: f.type || 'image/png'});
+            }
+            return f;
+        });
+        uploadFiles(files);
+    });
+
+    // ---- 右键菜单：在线重命名 ----
+    var ctxMenu = $(
+        '<div id="ctxMenu" style="display:none;position:fixed;z-index:10000;min-width:130px;background:#fff;' +
+        'box-shadow:0 2px 10px rgba(0,0,0,0.25);border-radius:4px;overflow:hidden;padding:4px 0;"></div>')
+        .append('<a href="#!" class="ctx-rename grey-text text-darken-2" style="display:block;padding:9px 18px;font-size:0.9rem;">Rename</a>')
+        .appendTo('body');
+    function hideCtxMenu() { ctxMenu.hide(); }
+    $(document).on('click', hideCtxMenu)
+               .on('scroll resize', hideCtxMenu)
+               .on('keydown', function (e) { if (e.key === 'Escape') { hideCtxMenu(); } });
+
+    $('#fileContainer').on('contextmenu', '.file-name', function (e) {
+        e.preventDefault();
+        ctxMenu.data('target', this).css({left: Math.min(e.clientX, $(window).width() - 150) + 'px',
+                                          top: Math.min(e.clientY, $(window).height() - 60) + 'px'}).show();
+    });
+    ctxMenu.on('click', '.ctx-rename', function (e) {
+        e.preventDefault();
+        var t = ctxMenu.data('target');
+        ctxMenu.hide();
+        if (t) { startRename($(t)); }
+    });
+
+    function startRename($name) {
+        var $span = $name.find('.rename-target');
+        if (!$span.length || $span.find('input').length) { return; }
+        var oldHtml = $span.html();
+        var oldDisplay = $span.text();
+        var isDir = $name.data('dir') === true || $name.data('dir') === 'true';
+        $span.html('<input type="text" class="rename-input browser-default" ' +
+            'style="margin:0;height:26px;line-height:26px;padding:0 6px;font-size:0.88rem;color:#333;">');
+        var $input = $span.find('input').val(oldDisplay).focus();
+        // 文件默认选中扩展名之前的部分，文件夹全选
+        var dot = isDir ? -1 : oldDisplay.lastIndexOf('.');
+        if (dot > 0) { $input[0].setSelectionRange(0, dot); } else { $input.select(); }
+
+        var done = false;
+        function cancel() {
+            if (done) { return; }
+            done = true;
+            $span.html(oldHtml);
+        }
+        function commit() {
+            if (done) { return; }
+            var val = ($input.val() || '').trim();
+            if (!val || val === oldDisplay || val.indexOf('/') >= 0 || val.indexOf('\\') >= 0 || val.endsWith('.')) {
+                cancel();
+                return;
+            }
+            done = true;
+            $.ajax({
+                url: withBucket('/file/rename?path=' + encodeURIComponent($name.data('path')) + '&newName=' + encodeURIComponent(val)),
+                method: 'GET',
+                cache: false,
+                success: function () {
+                    M.toast({html: 'Renamed to ' + escapeHtml(val)});
+                    var q = $('#fileSearch').val() ? $('#fileSearch').val().trim() : '';
+                    if (q) { doSearch(q); } else { loadFiles(); }
+                },
+                error: function (xhr) {
+                    var msg = xhr.responseText || 'rename failed';
+                    try { msg = JSON.parse(msg).errMsg || msg; } catch (ex) {}
+                    M.toast({html: msg});
+                    $span.html(oldHtml);
+                }
+            });
+        }
+        $input.on('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        });
+        $input.on('blur', commit);
+    }
 
     $('#mkdirBtn').click(function (e) {
         e.preventDefault();

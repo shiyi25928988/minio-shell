@@ -2,6 +2,7 @@ package yi.shi.plinth.minio;
 
 import com.google.inject.Singleton;
 import io.minio.BucketExistsArgs;
+import io.minio.CopyObjectArgs;
 import io.minio.GetObjectArgs;
 import io.minio.GetObjectResponse;
 import io.minio.ListObjectsArgs;
@@ -10,6 +11,7 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import io.minio.Result;
+import io.minio.SourceObject;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import io.minio.admin.GetServerInfoResponse;
@@ -160,6 +162,60 @@ public class MinioService {
     /** 删除对象。 */
     public void deleteObject(String bucket, String object) throws Exception {
         client.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(object).build());
+    }
+
+    /**
+     * 重命名（S3 对象不可变，没有原生 rename）：服务端 copyObject 到新 key 后删除旧 key，
+     * 数据只在 MinIO 内部拷贝，不经过应用。文件夹（以 '/' 结尾）则递归拷贝其前缀下全部对象。
+     *
+     * @param newName 新的单级名称（不含路径分隔符），由调用方校验
+     * @return 新的对象路径（文件夹为以 '/' 结尾的新前缀）
+     */
+    public String renameObject(String bucket, String oldPath, String newName) throws Exception {
+        boolean dir = oldPath.endsWith("/");
+        String stripped = dir ? oldPath.substring(0, oldPath.length() - 1) : oldPath;
+        int idx = stripped.lastIndexOf('/');
+        String parent = idx >= 0 ? stripped.substring(0, idx + 1) : "";
+        String oldPrefix = parent + stripped.substring(idx + 1) + (dir ? "/" : "");
+        String newPrefix = parent + newName + (dir ? "/" : "");
+        if (newPrefix.equals(oldPrefix)) {
+            return oldPrefix; // 名字未变化，no-op（避免 copy 到自身后删除导致对象丢失）
+        }
+        if (dir) {
+            // 目标前缀已被占用（有占位对象或子内容）则拒绝
+            if (statObject(bucket, newPrefix) != null || !listObjects(bucket, newPrefix, false).isEmpty()) {
+                throw new IllegalStateException("Target already exists: " + newName);
+            }
+            // 递归列出旧前缀下全部 key（含 0 字节占位对象本身）
+            List<String> keys = new ArrayList<>();
+            for (Result<Item> r : client.listObjects(ListObjectsArgs.builder()
+                    .bucket(bucket).prefix(oldPrefix).recursive(true).build())) {
+                keys.add(r.get().objectName());
+            }
+            for (String key : keys) {
+                String suffix = key.substring(oldPrefix.length());
+                copyInBucket(bucket, key, newPrefix + suffix);
+            }
+            for (String key : keys) {
+                deleteObject(bucket, key);
+            }
+        } else {
+            if (statObject(bucket, newPrefix) != null) {
+                throw new IllegalStateException("Target already exists: " + newName);
+            }
+            copyInBucket(bucket, oldPath, newPrefix);
+            deleteObject(bucket, oldPath);
+        }
+        return newPrefix;
+    }
+
+    /** 同桶内服务端拷贝，默认 COPY 元数据指令保留原 content-type。 */
+    private void copyInBucket(String bucket, String source, String target) throws Exception {
+        client.copyObject(CopyObjectArgs.builder()
+                .bucket(bucket)
+                .object(target)
+                .source(SourceObject.builder().bucket(bucket).object(source).build())
+                .build());
     }
 
     /** 列出所有桶（admin 用，查看全部用户）。 */

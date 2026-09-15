@@ -88,6 +88,30 @@ public class ShareService {
         return shareMapper.deleteByObject(bucket, objectName);
     }
 
+    /**
+     * 文件重命名后迁移其全部分享链接到新对象路径（token/密码/有效期/次数全部不变，链接继续可用）。
+     * 返回迁移的条数。
+     */
+    public int renameObjectLinks(String bucket, String oldObject, String newObject) {
+        if (bucket == null || oldObject == null || newObject == null) {
+            return 0;
+        }
+        return shareMapper.renameObjectLinks(bucket, oldObject, newObject, displayName(newObject));
+    }
+
+    /**
+     * 文件夹重命名后迁移其前缀下全部分享链接：替换 object_name 前缀，
+     * 分享文件本身的 basename 不变，故 filename 列不动。返回迁移条数。
+     */
+    public int renamePrefixLinks(String bucket, String oldPrefix, String newPrefix) {
+        if (bucket == null || oldPrefix == null || newPrefix == null) {
+            return 0;
+        }
+        // LIKE 转义：先转义 '/' 本身，再转义通配符 % 和 _
+        String like = oldPrefix.replace("/", "//").replace("%", "/%").replace("_", "/_") + "%";
+        return shareMapper.renamePrefixLinks(bucket, like, newPrefix, oldPrefix.length() + 1);
+    }
+
     public Share getByToken(String token) {
         if (token == null || token.isBlank()) {
             return null;

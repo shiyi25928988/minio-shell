@@ -204,6 +204,35 @@ public class FileApi {
         return new JSON<>("created");
     }
 
+    /**
+     * 重命名文件或文件夹（同级目录内改名）。对象存储无原生 rename，
+     * 由 {@link MinioService#renameObject} 以服务端 copy + delete 实现。
+     */
+    @GET
+    @HttpPath("/file/rename")
+    @AUTH
+    public JSON<String> rename(@HttpParam("path") String path,
+                               @HttpParam("newName") String newName,
+                               @HttpParam("bucket") String bucket) throws Exception {
+        if (path == null || path.isBlank()) {
+            throw new IllegalArgumentException("path is required");
+        }
+        String name = newName == null ? "" : newName.trim();
+        if (name.isEmpty() || name.contains("/") || name.contains("\\")
+                || name.equals(".") || name.equals("..") || name.endsWith(".")) {
+            throw new IllegalArgumentException("invalid new name");
+        }
+        String b = resolveBucket(bucket);
+        String newPath = minioService.renameObject(b, path, name);
+        // 分享记录迁移到新对象路径：文件夹迁移其前缀下全部链接，文件仅迁移精确匹配
+        if (path.endsWith("/")) {
+            shareService.renamePrefixLinks(b, path, newPath);
+        } else {
+            shareService.renameObjectLinks(b, path, newPath);
+        }
+        return new JSON<>("renamed");
+    }
+
     /** 列出所有桶名（仅 admin，用于查看全部用户）。 */
     @GET
     @HttpPath("/file/buckets")
