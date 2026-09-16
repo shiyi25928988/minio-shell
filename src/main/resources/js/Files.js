@@ -672,6 +672,153 @@ $(document).ready(function () {
         if (e.which === 13) { e.preventDefault(); $('#mkdirConfirmBtn').trigger('click'); }
     });
 
+    // ---- Add from URL：服务端从 http(s) URL 拉取文件，存入桶内 download/ 目录 ----
+    // 右侧固定进度卡片栈：支持多个下载并发，每个下载一张独立卡片（响应为 NDJSON 事件流）
+    var activeFetchCount = 0;
+    // 正在下载的 URL（归一化后）：同一 URL 不允许并发重复下载
+    var activeFetchUrls = {};
+    $('body').append(
+        '<div id="fetchStack" style="position:fixed;right:24px;top:80px;width:360px;z-index:1200;max-height:calc(100vh - 100px);overflow-y:auto;"></div>'
+    );
+    function createFetchCard(url) {
+        var $card = $(
+            '<div class="card-panel z-depth-3" style="margin:0 0 10px;padding:14px 18px;">' +
+              '<div style="font-size:0.92rem;margin-bottom:2px;"><b class="fp-title">Downloading…</b></div>' +
+              '<div class="grey-text text-darken-1 fp-name" style="font-size:0.78rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>' +
+              '<div class="progress" style="margin:8px 0 4px;height:10px;"><div class="fp-bar determinate" style="width:0%;"></div></div>' +
+              '<div class="grey-text fp-pct" style="font-size:0.78rem;min-height:1em;">Connecting…</div>' +
+            '</div>'
+        );
+        $card.find('.fp-name').text(url);
+        $('#fetchStack').append($card);
+        return {
+            progress: function (ev) {
+                if (ev.name) { $card.find('.fp-name').text('download/' + ev.name); }
+                var read = ev.read || 0, total = ev.total;
+                var $bar = $card.find('.fp-bar');
+                if (total && total > 0) {
+                    var pct = Math.min(100, Math.round(read / total * 100));
+                    $bar.attr('class', 'fp-bar determinate').css('width', pct + '%');
+                    $card.find('.fp-pct').text(pct + '%  ·  ' + formatSize(read) + ' / ' + formatSize(total));
+                } else {
+                    // 源没有 Content-Length：用不确定进度条，只显示已拉取字节
+                    $bar.attr('class', 'fp-bar indeterminate').css('width', '');
+                    $card.find('.fp-pct').text(formatSize(read) + ' downloaded…');
+                }
+            },
+            done: function (object) {
+                $card.find('.fp-bar').attr('class', 'fp-bar determinate').css({width: '100%', 'background-color': '#43a047'});
+                $card.find('.fp-title').text('Done').css('color', '#2e7d32');
+                $card.find('.fp-name').text(object);
+                $card.find('.fp-pct').text('Saved to ' + object);
+                setTimeout(function () { $card.fadeOut(200, function () { $card.remove(); }); }, 1500);
+            },
+            fail: function (msg) {
+                $card.find('.fp-bar').attr('class', 'fp-bar determinate').css({width: '100%', 'background-color': '#e53935'});
+                $card.find('.fp-title').text('Failed').css('color', '#c62828');
+                $card.find('.fp-pct').text(msg);
+                setTimeout(function () { $card.fadeOut(200, function () { $card.remove(); }); }, 4000);
+            }
+        };
+    }
+
+    $('#fetchUrlBtn').click(function (e) {
+        e.preventDefault();
+        $('#fetchUrlInput').val('');
+        var modal = M.Modal.getInstance($('#fetchUrlModal')[0]) || M.Modal.init($('#fetchUrlModal')[0]);
+        modal.open();
+        setTimeout(function () { $('#fetchUrlInput').focus(); }, 150);
+    });
+    $(document).on('click', '#fetchUrlConfirmBtn', function (e) {
+        e.preventDefault();
+        var url = ($('#fetchUrlInput').val() || '').trim();
+        if (!url) { M.toast({html: 'URL required'}); return; }
+        if (!/^https?:\/\//i.test(url)) {
+            M.toast({html: 'URL must start with http:// or https://'});
+            return;
+        }
+        var key;
+        try { key = new URL(url).href; } catch (ex) { key = url; }
+        if (activeFetchUrls[key]) {
+            // 同一 URL 正在下载：不关闭弹窗、不重复发请求
+            M.toast({html: 'duplicate file is downloading'});
+            return;
+        }
+        // 立刻关闭弹窗；不同 URL 可并发，每个下载在右侧有独立进度卡片
+        var modalInst = M.Modal.getInstance($('#fetchUrlModal')[0]);
+        if (modalInst) { modalInst.close(); }
+        startUrlFetch(url, key);
+    });
+    $(document).on('keypress', '#fetchUrlInput', function (e) {
+        if (e.which === 13) { e.preventDefault(); $('#fetchUrlConfirmBtn').trigger('click'); }
+    });
+
+    function startUrlFetch(url, urlKey) {
+        activeFetchUrls[urlKey] = true;
+        // 第一批下载开始时进入 download/ 目录；后续并发下载完成只刷新当前视图，不抢视图
+        var firstOfBatch = activeFetchCount === 0;
+        activeFetchCount++;
+        if (firstOfBatch) {
+            $('#fileSearch').val('');
+            prefix = 'download/';
+            loadFiles();
+        }
+        var card = createFetchCard(url);
+        var xhr = new XMLHttpRequest();
+        var consumed = 0, finished = false;
+        function settle() {
+            if (finished) { return; }
+            finished = true;
+            activeFetchCount--;
+            delete activeFetchUrls[urlKey];
+            loadFiles();
+            loadStorage();
+        }
+        // 增量解析 NDJSON：readyState 3 时 responseText 不断增长，按行消费已完整的事件
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 3 && xhr.readyState !== 4) { return; }
+            var text = xhr.responseText || '';
+            var idx;
+            while ((idx = text.indexOf('\n', consumed)) >= 0) {
+                var line = text.substring(consumed, idx).trim();
+                consumed = idx + 1;
+                if (!line) { continue; }
+                var ev;
+                try { ev = JSON.parse(line); } catch (ex2) { continue; }
+                if (ev.status === 'progress') {
+                    card.progress(ev);
+                } else if (ev.status === 'done') {
+                    var object = ev.object || 'download/';
+                    card.done(object);
+                    M.toast({html: 'Saved to ' + escapeHtml(object)});
+                    settle();
+                } else if (ev.status === 'error') {
+                    var msg = ev.message || 'fetch failed';
+                    card.fail(msg);
+                    M.toast({html: escapeHtml(msg)});
+                    settle();
+                }
+            }
+        };
+        xhr.onload = function () {
+            if (finished) { return; }
+            // 未收到任何事件：首个事件前的失败，服务端按框架标准 JSON {code,errMsg} 返回
+            var msg = xhr.responseText || 'fetch failed';
+            try { msg = JSON.parse(msg).errMsg || msg; } catch (ex) {}
+            card.fail(msg);
+            M.toast({html: escapeHtml(msg)});
+            settle();
+        };
+        xhr.onerror = function () {
+            if (finished) { return; }
+            card.fail('network error');
+            M.toast({html: 'network error'});
+            settle();
+        };
+        xhr.open('GET', withBucket('/file/fetch-url?url=' + encodeURIComponent(url)));
+        xhr.send();
+    }
+
     $('#refreshBtn').click(function (e) { e.preventDefault(); loadFiles(); });
 
     // 排序：切换排序键或方向后重新加载并渲染当前视图（搜索状态下沿用当前查询词）

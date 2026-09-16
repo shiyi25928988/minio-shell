@@ -233,6 +233,69 @@ public class FileApi {
         return new JSON<>("renamed");
     }
 
+    /**
+     * 从 HTTP(S) URL 服务端拉取文件，存入当前用户桶的 {@code download/} 目录（目录不存在自动创建）。
+     *
+     * <p>响应为 <b>NDJSON</b>（每行一个 JSON 事件，边拉取边 flush）：
+     * 拉取中的 {@code {"status":"progress","name":...,"read":...,"total":...}}
+     * → 成功 {@code {"status":"done","object":...}}；流已提交后失败则追加
+     * {@code {"status":"error","message":...}}。首个事件写出前的失败仍走框架标准 500 JSON。
+     */
+    @GET
+    @HttpPath("/file/fetch-url")
+    @AUTH
+    public void fetchUrl(@HttpParam("url") String url,
+                         @HttpParam("bucket") String bucket) throws Exception {
+        if (url == null || url.isBlank()) {
+            throw new IllegalArgumentException("url is required");
+        }
+        String b = resolveBucket(bucket);
+        var response = ServletHelper.getResponse();
+        // 延迟到首个进度事件才获取输出流：此前（参数非法/连接失败/源非 2xx）响应未触碰，框架可正常返回 500 JSON
+        final boolean[] started = {false};
+        final java.io.OutputStream[] outRef = new java.io.OutputStream[1];
+
+        try {
+            String object = minioService.fetchUrlToBucket(b, url.trim(), (name, read, total) -> {
+                if (!started[0]) {
+                    response.setContentType("application/x-ndjson;charset=UTF-8");
+                    response.setHeader("Cache-Control", "no-store");
+                    outRef[0] = response.getOutputStream();
+                    started[0] = true;
+                }
+                Map<String, Object> evt = new java.util.LinkedHashMap<>();
+                evt.put("status", "progress");
+                evt.put("name", name);
+                evt.put("read", read);
+                evt.put("total", total);
+                writeEventLine(outRef[0], evt);
+            });
+            Map<String, Object> done = new java.util.LinkedHashMap<>();
+            done.put("status", "done");
+            done.put("object", object);
+            writeEventLine(outRef[0], done);
+        } catch (Exception e) {
+            if (!started[0]) {
+                throw e;
+            }
+            try {
+                Map<String, Object> err = new java.util.LinkedHashMap<>();
+                err.put("status", "error");
+                err.put("message", e.getMessage() == null ? "fetch failed" : e.getMessage());
+                writeEventLine(outRef[0], err);
+            } catch (Exception ignore) {
+                // 客户端已断开等情况，无可写之处
+            }
+        }
+    }
+
+    /** 写出一个 NDJSON 事件行并立即 flush（提交响应），使浏览器 XHR 能实时收到进度。 */
+    private static void writeEventLine(java.io.OutputStream out, Map<String, Object> event) throws Exception {
+        out.write((yi.shi.plinth.utils.JsonUtils.toJson(event) + "\n").getBytes(
+                java.nio.charset.StandardCharsets.UTF_8));
+        out.flush();
+    }
+
     /** 列出所有桶名（仅 admin，用于查看全部用户）。 */
     @GET
     @HttpPath("/file/buckets")

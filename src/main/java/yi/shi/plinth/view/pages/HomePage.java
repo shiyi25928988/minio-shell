@@ -62,6 +62,8 @@ public class HomePage extends Page {
                                                 .withId("uploadBtn").withStyle("margin-left:8px;"),
                                         a("New Folder").withClass("btn green waves-effect waves-light")
                                                 .withId("mkdirBtn").withStyle("margin-left:8px;"),
+                                        a("Add from URL").withClass("btn indigo waves-effect waves-light")
+                                                .withId("fetchUrlBtn").withStyle("margin-left:8px;"),
                                         a("Refresh").withClass("btn grey waves-effect waves-light")
                                                 .withId("refreshBtn").withStyle("margin-left:8px;")
                                 )
@@ -101,6 +103,7 @@ public class HomePage extends Page {
                         buildPreviewModal(),
                         buildConfirmDeleteModal(),
                         buildMkdirModal(),
+                        buildFetchUrlModal(),
                         script().withSrc("/js/Files.js?v=" + yi.shi.plinth.App.START_TIME)
                 )
         ).withClass("grey lighten-4");
@@ -188,6 +191,26 @@ public class HomePage extends Page {
                 div().withClass("modal-footer").with(
                         a("Cancel").withClass("modal-close waves-effect btn grey").withHref("#!"),
                         a("Create").withClass("waves-effect btn blue").withId("mkdirConfirmBtn").withHref("#!")
+                )
+        );
+    }
+
+    /** "Add from URL" 弹窗：输入 http(s) URL，由服务端下载到桶内 download/ 目录。 */
+    private static j2html.tags.specialized.DivTag buildFetchUrlModal() {
+        return div().withClass("modal").withId("fetchUrlModal").with(
+                div().withClass("modal-content").with(
+                        h5("Add from URL"),
+                        div().withClass("input-field").with(
+                                input().withType("text").withId("fetchUrlInput")
+                                        .attr("placeholder", "https://example.com/file.pdf"),
+                                label("File URL (http/https)").withFor("fetchUrlInput")
+                        ),
+                        p("The file is downloaded by the server and saved into the download/ folder (created automatically).")
+                                .withClass("grey-text").withStyle("font-size:0.85rem;")
+                ),
+                div().withClass("modal-footer").with(
+                        a("Cancel").withClass("modal-close waves-effect btn grey").withHref("#!"),
+                        a("Download").withClass("waves-effect btn indigo").withId("fetchUrlConfirmBtn").withHref("#!")
                 )
         );
     }

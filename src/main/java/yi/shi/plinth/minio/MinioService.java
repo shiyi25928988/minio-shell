@@ -23,11 +23,22 @@ import lombok.extern.slf4j.Slf4j;
 import yi.shi.plinth.file.dto.FileItem;
 
 import java.io.ByteArrayInputStream;
+import java.io.FilterInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * MinIO 数据面服务（{@code @Singleton}）：用管理员凭据操作所有用户桶。
@@ -275,6 +286,206 @@ public class MinioService {
     /** 生成 40 位随机 secret key。 */
     public String generateSecretKey() {
         return randomString(40, SECRET_CHARS);
+    }
+
+    private static final HttpClient URL_FETCHER = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .connectTimeout(Duration.ofSeconds(15))
+            .build();
+    private static final Pattern CD_FILENAME_STAR = Pattern.compile("filename\\*\\s*=\\s*([^;]+)");
+    private static final Pattern CD_FILENAME = Pattern.compile("filename\\s*=\\s*\"?([^\";]+)\"?");
+
+    /**
+     * URL 拉取进度回调，在 MinIO SDK 读取源数据流的线程中同步调用。
+     * 回调中写 HTTP 响应时抛 IOException 会中断后续拉取（如客户端已断开）。
+     */
+    @FunctionalInterface
+    public interface FetchProgress {
+        /**
+         * @param filename   已确定的文件名（{@code download/} 之后的部分）
+         * @param readBytes  已从源读取并转发给 MinIO 的字节数
+         * @param totalBytes 源 Content-Length；-1 表示未知
+         */
+        void accept(String filename, long readBytes, long totalBytes) throws Exception;
+    }
+
+    /** 无进度回调的便捷重载。 */
+    public String fetchUrlToBucket(String bucket, String sourceUrl) throws Exception {
+        return fetchUrlToBucket(bucket, sourceUrl, (name, read, total) -> { });
+    }
+
+    /**
+     * 从 HTTP(S) URL 服务端拉取文件并存入桶内 {@code download/} 目录（目录不存在则自动创建占位对象）。
+     * 流式转发（不在应用内存中缓冲整个文件），未知 Content-Length 时按 10MB 分片上传。
+     *
+     * @param progress 字节进度回调（首事件为 0/total，末事件为 100%）
+     * @return 实际存储的对象 key，如 {@code download/report.pdf}（重名自动加序号）
+     */
+    public String fetchUrlToBucket(String bucket, String sourceUrl, FetchProgress progress) throws Exception {
+        URI uri;
+        try {
+            uri = URI.create(sourceUrl.trim());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("invalid URL");
+        }
+        if (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme())) {
+            throw new IllegalArgumentException("URL must start with http:// or https://");
+        }
+        if (uri.getHost() == null || uri.getHost().isBlank()) {
+            throw new IllegalArgumentException("invalid URL: missing host");
+        }
+        ensureBucket(bucket);
+        // 文件夹占位对象（与 New Folder 一致），已存在则跳过
+        if (statObject(bucket, "download/") == null) {
+            makeFolder(bucket, "download");
+        }
+
+        HttpRequest request = HttpRequest.newBuilder(uri)
+                .timeout(Duration.ofMinutes(10))
+                .header("User-Agent", "minio-shell-url-fetch")
+                .GET().build();
+        HttpResponse<InputStream> resp = URL_FETCHER.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+            try (InputStream ignored = resp.body()) {
+                throw new IllegalStateException("source returned HTTP " + resp.statusCode());
+            }
+        }
+        long length = resp.headers().firstValueAsLong("Content-Length").orElse(-1L);
+        String contentType = resp.headers().firstValue("Content-Type").orElse(null);
+        // 重定向后 resp.uri() 是最终地址，文件名应取自最终响应
+        String filename = resolveDownloadName(resp.uri(), resp.headers().firstValue("Content-Disposition").orElse(null));
+        String object = uniqueObjectName(bucket, "download/" + filename);
+
+        progress.accept(filename, 0L, length);
+        try (CountingInputStream in = new CountingInputStream(resp.body(), progress, filename, length)) {
+            PutObjectArgs.Builder b = PutObjectArgs.builder()
+                    .bucket(bucket).object(object).contentType(contentType);
+            if (length >= 0) {
+                b.stream(in, length, -1L);
+            } else {
+                b.stream(in, -1L, 10L * 1024 * 1024); // 长度未知：10MB 分片
+            }
+            client.putObject(b.build());
+            progress.accept(filename, in.count, length); // 收尾事件（未知长度时给出最终字节数）
+        }
+        log.info("Fetched {} -> {}/{} ({} bytes)", sourceUrl, bucket, object, length);
+        return object;
+    }
+
+    /**
+     * 计数输入流：MinIO SDK 每读一块就回调一次进度（按 1% 或 500ms 节流，未知长度时按 256KB）。
+     * 回调抛出的受检异常包装为 IOException，传播后中断 putObject（如浏览器侧已断开）。
+     */
+    private static final class CountingInputStream extends FilterInputStream {
+        private final FetchProgress progress;
+        private final String filename;
+        private final long total;
+        private long count;
+        private long lastSent;
+        private long lastEmitMs = System.currentTimeMillis();
+
+        private CountingInputStream(InputStream in, FetchProgress progress, String filename, long total) {
+            super(in);
+            this.progress = progress;
+            this.filename = filename;
+            this.total = total;
+        }
+
+        @Override
+        public int read() throws IOException {
+            int n = in.read();
+            if (n >= 0) {
+                count++;
+                maybeEmit();
+            }
+            return n;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            int n = in.read(b, off, len);
+            if (n > 0) {
+                count += n;
+                maybeEmit();
+            }
+            return n;
+        }
+
+        private void maybeEmit() throws IOException {
+            long now = System.currentTimeMillis();
+            long step = total > 0 ? Math.max(65536, total / 100) : 262144;
+            if (count - lastSent < step && now - lastEmitMs < 500) {
+                return;
+            }
+            lastSent = count;
+            lastEmitMs = now;
+            try {
+                progress.accept(filename, count, total);
+            } catch (IOException | RuntimeException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new IOException(e);
+            }
+        }
+    }
+
+    /** 重名时在扩展名前加 (1)/(2)...，避免静默覆盖已有对象。 */
+    private String uniqueObjectName(String bucket, String object) {
+        if (statObject(bucket, object) == null) {
+            return object;
+        }
+        int dot = object.lastIndexOf('.');
+        int slash = object.lastIndexOf('/');
+        String base = dot > slash ? object.substring(0, dot) : object;
+        String ext = dot > slash ? object.substring(dot) : "";
+        for (int i = 1; i < 1000; i++) {
+            String candidate = base + " (" + i + ")" + ext;
+            if (statObject(bucket, candidate) == null) {
+                return candidate;
+            }
+        }
+        return base + " (" + System.currentTimeMillis() + ")" + ext;
+    }
+
+    /** 文件名优先级：Content-Disposition（RFC 5987 filename* 优先）> 最终 URL 路径末段 > 兜底名；并做清洗/截断。 */
+    private static String resolveDownloadName(URI uri, String contentDisposition) {
+        String name = "";
+        if (contentDisposition != null) {
+            Matcher star = CD_FILENAME_STAR.matcher(contentDisposition);
+            if (star.find()) {
+                String v = star.group(1).trim();
+                int q = v.indexOf('\'');
+                int q2 = q >= 0 ? v.indexOf('\'', q + 1) : -1;
+                name = q2 >= 0 ? v.substring(q2 + 1) : v;
+                name = URLDecoder.decode(name, StandardCharsets.UTF_8);
+            } else {
+                Matcher plain = CD_FILENAME.matcher(contentDisposition);
+                if (plain.find()) {
+                    name = plain.group(1).trim();
+                }
+            }
+        }
+        if (name.isBlank()) {
+            String path = uri.getPath();
+            if (path != null) {
+                int slash = path.lastIndexOf('/');
+                if (slash >= 0 && slash < path.length() - 1) {
+                    name = URLDecoder.decode(path.substring(slash + 1), StandardCharsets.UTF_8);
+                }
+            }
+        }
+        // 去掉路径分隔符、Windows 非法字符及控制字符
+        name = name.replaceAll("[/\\:*?\"<>|\\x00-\\x1f]", "_").trim();
+        name = name.replaceAll("^\\.+", "").replaceAll("\\.+$", "");
+        if (name.isBlank()) {
+            name = "file-" + System.currentTimeMillis();
+        }
+        if (name.length() > 180) {
+            int dot = name.lastIndexOf('.');
+            name = dot > 150 ? name.substring(0, 180 - (name.length() - dot)) + name.substring(dot)
+                             : name.substring(0, 180);
+        }
+        return name;
     }
 
     /** 创建"文件夹"：写入一个以 '/' 结尾的占位对象（0 字节）。 */
